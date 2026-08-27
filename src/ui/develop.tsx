@@ -1,0 +1,119 @@
+import { useState } from "react";
+import { HSL_CHANNELS, RANGES, type EditRecipe, type GlobalsPatch, type HslChannel } from "../recipe/types";
+import { Panel, Slider } from "./controls";
+
+type Props = {
+  recipe: EditRecipe;
+  solo: string | null;
+  open: Record<string, boolean>;
+  onToggle: (id: string, alt: boolean) => void;
+  onLive: (patch: GlobalsPatch) => void;
+  onCommit: () => void;
+};
+
+export function DevelopPanels({ recipe, solo, open, onToggle, onLive, onCommit }: Props) {
+  const [hslCh, setHslCh] = useState<HslChannel>("orange");
+  const g = recipe.globals;
+  const panel = (id: string, title: string) => ({ id, title, solo, open, onToggle });
+
+  const num = (
+    key: keyof Omit<GlobalsPatch, "hsl" | "toneCurve">,
+    label: string,
+    range: readonly [number, number],
+    step: number,
+  ) => (
+    <Slider
+      label={label}
+      value={g[key] as number}
+      min={range[0]}
+      max={range[1]}
+      step={step}
+      onChange={(v) => onLive({ [key]: v })}
+      onCommit={onCommit}
+      onReset={() => {
+        onLive({ [key]: 0 });
+        onCommit();
+      }}
+    />
+  );
+
+  return (
+    <>
+      <Panel {...panel("basic", "Basic")}>
+        {num("exposure", "Exposure", RANGES.exposure, 0.05)}
+        {num("contrast", "Contrast", RANGES.contrast, 1)}
+        {num("highlights", "Highlights", RANGES.highlights, 1)}
+        {num("shadows", "Shadows", RANGES.shadows, 1)}
+        {num("whites", "Whites", RANGES.whites, 1)}
+        {num("blacks", "Blacks", RANGES.blacks, 1)}
+        {num("temp", "Temp", RANGES.temp, 1)}
+        {num("tint", "Tint", RANGES.tint, 1)}
+        {num("vibrance", "Vibrance", RANGES.vibrance, 1)}
+        {num("saturation", "Saturation", RANGES.saturation, 1)}
+      </Panel>
+      <Panel {...panel("curve", "Tone Curve")}>
+        {(["highlights", "lights", "darks", "shadows"] as const).map((k) => (
+          <Slider
+            key={k}
+            label={k[0].toUpperCase() + k.slice(1)}
+            value={g.toneCurve[k]}
+            min={RANGES.curve[0]}
+            max={RANGES.curve[1]}
+            step={1}
+            onChange={(v) => onLive({ toneCurve: { [k]: v } })}
+            onCommit={onCommit}
+            onReset={() => {
+              onLive({ toneCurve: { [k]: 0 } });
+              onCommit();
+            }}
+          />
+        ))}
+      </Panel>
+      <Panel {...panel("hsl", "HSL")}>
+        <div className="hsl-ch">
+          {HSL_CHANNELS.map((ch) => (
+            <button
+              key={ch}
+              type="button"
+              className={ch === hslCh ? "on" : ""}
+              onClick={() => setHslCh(ch)}
+            >
+              {ch}
+            </button>
+          ))}
+        </div>
+        {(["hue", "sat", "lum"] as const).map((k) => (
+          <Slider
+            key={k}
+            label={k.toUpperCase()}
+            value={g.hsl[hslCh][k]}
+            min={-100}
+            max={100}
+            step={1}
+            onChange={(v) => onLive({ hsl: { [hslCh]: { [k]: v } } })}
+            onCommit={onCommit}
+            onReset={() => {
+              onLive({ hsl: { [hslCh]: { [k]: 0 } } });
+              onCommit();
+            }}
+          />
+        ))}
+      </Panel>
+      <Panel {...panel("grade", "Color Grading")} stub="Global wheels land after v1. Use Temp/Tint and HSL for now." />
+      <Panel {...panel("detail", "Detail")}>
+        {num("sharpening", "Sharpening", RANGES.sharpening, 1)}
+        {num("noiseReduction", "Noise Reduction", RANGES.noiseReduction, 1)}
+        {num("clarity", "Clarity", RANGES.clarity, 1)}
+        {num("dehaze", "Dehaze", RANGES.dehaze, 1)}
+      </Panel>
+      <Panel {...panel("optics", "Optics")}>
+        {num("lensCorrection", "Lens correction", RANGES.lensCorrection, 1)}
+        <p className="stub">Stored on the recipe; no profile library in v1.</p>
+      </Panel>
+      <Panel {...panel("geo", "Geometry")}>
+        {num("cropAngle", "Rotate", RANGES.cropAngle, 0.1)}
+        <p className="stub">Crop/perspective stay off until the mask/geometry pass.</p>
+      </Panel>
+    </>
+  );
+}

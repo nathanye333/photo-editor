@@ -1,0 +1,10 @@
+{"id":"warm","instruction":"warm this up","expectedCategories":["color"],"expectedPatch":{"globals":{"temp":20}},"mode":"delta"}
+{"id":"lift-shadows","instruction":"lift the shadows","expectedCategories":["tone"],"expectedPatch":{"globals":{"shadows":25}},"mode":"delta"}
+{"id":"reset","instruction":"reset the edit","expectedCategories":["presets"],"expectedTool":"reset_recipe"}
+{"id":"stars","instruction":"give this 3 stars","expectedCategories":["catalog"],"expectedCatalog":{"rating":3}}
+{"id":"exposure","instruction":"brighten a stop","expectedCategories":["tone"],"expectedPatch":{"globals":{"exposure":1}},"mode":"delta"}
+{"id":"cool","instruction":"cool down the color temperature","expectedCategories":["color"],"expectedPatch":{"globals":{"temp":-15}},"mode":"delta"}
+{"id":"vibrance","instruction":"add some vibrance","expectedCategories":["color"],"expectedPatch":{"globals":{"vibrance":20}},"mode":"delta"}
+{"id":"orange-sat","instruction":"boost orange saturation","expectedCategories":["color"],"expectedPatch":{"globals":{"hsl":{"orange":{"sat":20}}}},"mode":"delta"}
+{"id":"reject","instruction":"flag this as a reject","expectedCategories":["catalog"],"expectedCatalog":{"flag":"reject"}}
+{"id":"clarity","instruction":"add some clarity","expectedCategories":["detail"],"expectedPatch":{"globals":{"clarity":20}},"mode":"delta"}
