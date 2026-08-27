@@ -54,19 +54,6 @@ export function rasterizeBrushStrokes(strokes: BrushStroke[], w: number, h: numb
   return ctx.getImageData(0, 0, canvas.width, canvas.height);
 }
 
-/** Flip rows so TypedArray uploads match textures that used UNPACK_FLIP_Y_WEBGL. */
-export function flipImageDataY(src: ImageData): ImageData {
-  const { width, height, data } = src;
-  const out = new ImageData(width, height);
-  const row = width * 4;
-  for (let y = 0; y < height; y++) {
-    const srcOff = y * row;
-    const dstOff = (height - 1 - y) * row;
-    out.data.set(data.subarray(srcOff, srcOff + row), dstOff);
-  }
-  return out;
-}
-
 export function rgbToHueChroma(r: number, g: number, b: number): { hue: number; chroma: number; luma: number } {
   const max = Math.max(r, g, b);
   const min = Math.min(r, g, b);
