@@ -51,7 +51,7 @@ Core develop globals, minimal library, and the agent.
 - [~] Color Grading panel — stub in UI
 - [~] Optics — `lensCorrection` on recipe, unused in renderer, no profile library
 - [~] Geometry — rotate slider only; no crop or perspective
-- [~] Masks — fully typed in `EditRecipe`, empty array, not rendered
+- [x] Masks — radial MVP shipped in v1.5; other mask types still deferred
 
 ---
 
@@ -59,18 +59,20 @@ Core develop globals, minimal library, and the agent.
 
 Highest-impact develop gap. Schema is ready in `src/recipe/types.ts`.
 
-- [ ] Mask UI (create, rename, reorder, invert, feather, density)
-- [ ] Radial gradient mask
+- [x] Mask UI (create, invert, feather, density; rename/reorder deferred)
+- [x] Radial gradient mask
 - [ ] Linear gradient mask
 - [ ] Brush mask (with add / subtract / intersect modes)
 - [ ] Luminance range mask
 - [ ] Color range mask
-- [ ] Per-mask develop params (partial `Globals` override)
-- [ ] WebGL mask compositing in preview renderer
-- [ ] Agent tool support for mask patches
+- [x] Per-mask develop params (partial `Globals` override — exposure/tone subset in UI)
+- [x] WebGL mask compositing in preview renderer
+- [x] Agent tool support for mask patches (`upsert_mask` / `remove_mask`)
 - [ ] Semantic mask component (typed; model integration TBD)
 
-**Exit criteria:** Apply a radial gradient exposure boost to a subject; see it in preview, undo, export, and via agent.
+**Exit criteria:** Apply a radial gradient exposure boost to a subject; see it in preview, undo, export, and via agent. **Met for radial MVP.**
+
+**Phase 2 (remaining):** linear / range / brush / semantic masks; canvas drag handles; rename/reorder UI; full per-mask Basic panel.
 
 ---
 
@@ -259,7 +261,7 @@ Features where Field intentionally diverges from Lightroom:
 
 ```
 v1    ✅  Globals, library basics, agent, JPEG export
-v1.5  →   Masks (local adjustments)
+v1.5  ~   Masks (radial MVP shipped; linear/brush/semantic next)
 v1.6  →   RAW decode + crop / transform
 v1.7  →   Color grading, lens profiles, full detail, point curve
 v2.0  →   Collections, keywords, culling views, virtual copies

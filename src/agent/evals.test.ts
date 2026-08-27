@@ -45,6 +45,10 @@ describe("develop-v1 evals", () => {
         if (c.expectedPatch.globals?.hsl?.orange?.sat !== undefined) {
           expect(next.globals.hsl.orange.sat).toBe(c.expectedPatch.globals.hsl.orange.sat);
         }
+        if (c.expectedPatch.masks?.upsert?.length) {
+          expect(next.masks).toHaveLength(c.expectedPatch.masks.upsert.length);
+          expect(next.masks[0].params.exposure).toBe(c.expectedPatch.masks.upsert[0].params?.exposure);
+        }
       }
       if (c.expectedCatalog) {
         const next = applyCatalogPatch({ rating: 0, flag: "unflagged" }, c.expectedCatalog);

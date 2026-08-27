@@ -8,3 +8,5 @@
 {"id":"orange-sat","instruction":"boost orange saturation","expectedCategories":["color"],"expectedPatch":{"globals":{"hsl":{"orange":{"sat":20}}}},"mode":"delta"}
 {"id":"reject","instruction":"flag this as a reject","expectedCategories":["catalog"],"expectedCatalog":{"flag":"reject"}}
 {"id":"clarity","instruction":"add some clarity","expectedCategories":["detail"],"expectedPatch":{"globals":{"clarity":20}},"mode":"delta"}
+{"id":"radial-center","instruction":"brighten the center with a radial mask","expectedCategories":["masks","tone"],"expectedTool":"upsert_mask","expectedPatch":{"masks":{"upsert":[{"id":"eval-radial","name":"Center","mode":"add","components":[{"type":"radial","cx":0.5,"cy":0.5,"radiusX":0.35,"radiusY":0.35,"feather":50}],"invert":false,"feather":50,"density":100,"params":{"exposure":0.7}}]}},"mode":"absolute"}
+{"id":"remove-mask","instruction":"remove the radial mask","expectedCategories":["masks"],"expectedTool":"remove_mask"}

@@ -21,4 +21,10 @@ Needs a Rust toolchain for the Tauri shell. The Vite app works alone for Develop
 - Histogram, Before (`\`), fit / 1:1, undo, copy/paste, presets, JPEG export
 - Docked agent (`apply_develop_patch` and catalog/preset tools). API key in Settings. No photo pixels are uploaded.
 
-Masks are typed on the recipe and unused in the UI.
+## v1.5 (radial masks)
+
+- Masks panel: add/delete radial, invert / feather / density, geometry sliders, local exposure/tone
+- WebGL multi-pass compositing (empty-mask path unchanged)
+- Agent: `upsert_mask` / `remove_mask`
+
+See [ROADMAP.md](ROADMAP.md) for remaining mask types and later tiers.

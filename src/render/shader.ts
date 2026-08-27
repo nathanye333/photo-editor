@@ -8,33 +8,8 @@ void main() {
 }
 `;
 
-export const FRAG = `#version 300 es
-precision highp float;
-in vec2 vUv;
-out vec4 fragColor;
-uniform sampler2D uImage;
-uniform float uExposure;
-uniform float uContrast;
-uniform float uHighlights;
-uniform float uShadows;
-uniform float uWhites;
-uniform float uBlacks;
-uniform float uTemp;
-uniform float uTint;
-uniform float uVibrance;
-uniform float uSaturation;
-uniform float uHslH[8];
-uniform float uHslS[8];
-uniform float uHslL[8];
-uniform float uCurveHi;
-uniform float uCurveLi;
-uniform float uCurveDk;
-uniform float uCurveSh;
-uniform float uClarity;
-uniform float uDehaze;
-uniform float uSharpen;
-uniform float uNR;
-
+/** Shared develop kernel body — samples uImage, writes developed sRGB via developSample(). */
+export const DEVELOP_BODY = `
 vec3 toLinear(vec3 s) { return pow(max(s, 0.0), vec3(2.2)); }
 vec3 toSRGB(vec3 l) { return pow(max(l, 0.0), vec3(1.0 / 2.2)); }
 
@@ -119,7 +94,7 @@ float toneMapLuma(float x) {
   return clamp(y, 0.0, 1.0);
 }
 
-void main() {
+vec3 developSample() {
   vec3 src = texture(uImage, vUv).rgb;
   vec3 lin = toLinear(src);
 
@@ -172,6 +147,81 @@ void main() {
   srgb += detail * (uClarity / 80.0);
   srgb += detail * (uSharpen / 120.0);
 
-  fragColor = vec4(clamp(srgb, 0.0, 1.0), 1.0);
+  return clamp(srgb, 0.0, 1.0);
+}
+`;
+
+const DEVELOP_UNIFORMS = `
+uniform sampler2D uImage;
+uniform float uExposure;
+uniform float uContrast;
+uniform float uHighlights;
+uniform float uShadows;
+uniform float uWhites;
+uniform float uBlacks;
+uniform float uTemp;
+uniform float uTint;
+uniform float uVibrance;
+uniform float uSaturation;
+uniform float uHslH[8];
+uniform float uHslS[8];
+uniform float uHslL[8];
+uniform float uCurveHi;
+uniform float uCurveLi;
+uniform float uCurveDk;
+uniform float uCurveSh;
+uniform float uClarity;
+uniform float uDehaze;
+uniform float uSharpen;
+uniform float uNR;
+`;
+
+export const FRAG = `#version 300 es
+precision highp float;
+in vec2 vUv;
+out vec4 fragColor;
+${DEVELOP_UNIFORMS}
+${DEVELOP_BODY}
+void main() {
+  fragColor = vec4(developSample(), 1.0);
+}
+`;
+
+/** Copy a texture to the current framebuffer. */
+export const BLIT_FRAG = `#version 300 es
+precision highp float;
+in vec2 vUv;
+out vec4 fragColor;
+uniform sampler2D uTex;
+void main() {
+  fragColor = texture(uTex, vUv);
+}
+`;
+
+/** Mix previous composite with locally developed image using a radial weight. */
+export const MIX_FRAG = `#version 300 es
+precision highp float;
+in vec2 vUv;
+out vec4 fragColor;
+uniform sampler2D uPrev;
+uniform sampler2D uLocal;
+uniform float uCx;
+uniform float uCy;
+uniform float uRadiusX;
+uniform float uRadiusY;
+uniform float uFeather;
+uniform float uDensity;
+uniform float uInvert;
+void main() {
+  vec3 prev = texture(uPrev, vUv).rgb;
+  vec3 local = texture(uLocal, vUv).rgb;
+  vec2 d = (vUv - vec2(uCx, uCy)) / max(vec2(uRadiusX, uRadiusY), vec2(1e-4));
+  float dist = length(d);
+  float feather = clamp(uFeather / 100.0, 0.001, 1.0);
+  float inner = 1.0 - feather;
+  float w = 1.0 - smoothstep(inner, 1.0, dist);
+  if (uInvert > 0.5) w = 1.0 - w;
+  w *= clamp(uDensity / 100.0, 0.0, 1.0);
+  fragColor = vec4(mix(prev, local, w), 1.0);
 }
 `;

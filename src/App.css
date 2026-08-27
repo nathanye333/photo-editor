@@ -353,6 +353,29 @@ h3 {
   padding: 2px 6px;
 }
 
+.mask-toolbar {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.mask-toolbar button {
+  padding: 2px 8px;
+}
+
+.mask-list {
+  margin-bottom: 8px;
+}
+
+.mask-check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 6px 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
 .stub {
   color: var(--muted);
   margin: 6px 0;

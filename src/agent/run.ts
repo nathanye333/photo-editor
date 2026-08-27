@@ -19,10 +19,20 @@ export function buildInstructions(opts: {
   const docs = categories.map((c) => CATEGORY_DOCS[c]).join("\n");
   const system = [
     "You are the develop assistant for Field, a local photo editor.",
-    "Mutate the shared edit recipe via tools. Deltas are relative. Never invent pixels or masks.",
+    "Mutate the shared edit recipe via tools. Global deltas are relative. Local adjustments use upsert_mask / remove_mask (structured mask ops only — never invent pixels).",
     "After tools, reply with one short sentence of what you changed.",
     docs,
     `Current globals: ${JSON.stringify(opts.recipe.globals)}`,
+    `Current masks: ${JSON.stringify(
+      opts.recipe.masks.map((m) => ({
+        id: m.id,
+        name: m.name,
+        invert: m.invert,
+        density: m.density,
+        params: m.params,
+        radial: m.components.find((c) => c.type === "radial") ?? null,
+      })),
+    )}`,
     `Catalog: rating=${opts.rating} flag=${opts.flag}`,
     opts.histogram
       ? `Histogram: meanLuma=${opts.histogram.meanLuma.toFixed(3)} clipLow=${opts.histogram.clipLow.toFixed(3)} clipHigh=${opts.histogram.clipHigh.toFixed(3)}`

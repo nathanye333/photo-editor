@@ -54,7 +54,7 @@ export type Globals = {
 
 export type MaskMode = "add" | "subtract" | "intersect";
 
-/** Typed for v1.5; v1 keeps `masks: []` and does not render them. */
+/** Local adjustments. v1.5 renders radial masks; other component types are stored but not drawn yet. */
 export type MaskComponent =
   | { type: "semantic"; label: string; model: string }
   | {
@@ -107,8 +107,18 @@ export type GlobalsPatch = Partial<
   }
 >;
 
+export type MaskPatch = {
+  /** Replace-or-insert by id. */
+  upsert?: Mask[];
+  /** Ids to delete. */
+  remove?: string[];
+  /** Full id order when present. */
+  reorder?: string[];
+};
+
 export type DevelopPatch = {
   globals?: GlobalsPatch;
+  masks?: MaskPatch;
 };
 
 export type Flag = "pick" | "reject" | "unflagged";
@@ -117,6 +127,9 @@ export type CatalogPatch = {
   rating?: number;
   flag?: Flag;
 };
+
+/** Max masks applied in the v1.5 renderer. */
+export const MAX_MASKS = 8;
 
 export const RANGES = {
   exposure: [-5, 5],
@@ -140,4 +153,8 @@ export const RANGES = {
   lensCorrection: [0, 100],
   cropAngle: [-45, 45],
   rating: [0, 5],
+  maskFeather: [0, 100],
+  maskDensity: [0, 100],
+  maskCoord: [0, 1],
+  maskRadius: [0.01, 1],
 } as const;

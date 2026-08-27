@@ -6,10 +6,10 @@ import { photoThumbSrc } from "./catalog/media";
 import { emptyPhoto, loadPhotos, loadPresets, openCatalog, savePresetRow, upsertPhoto } from "./catalog/store";
 import { fileName, type Photo, type Preset } from "./catalog/types";
 import { fileExists, fileUrl, isTauri, pickFolder, pickSaveJpeg, scanFolder, writeFileBytes } from "./native";
-import { cloneRecipe, defaultRecipe } from "./recipe/defaults";
+import { cloneRecipe, createRadialMask, defaultRecipe } from "./recipe/defaults";
 import { pushHistory, redo, undo } from "./recipe/history";
 import { applyCatalogPatch, applyPatch } from "./recipe/patch";
-import type { CatalogPatch, EditRecipe, Flag, GlobalsPatch } from "./recipe/types";
+import type { CatalogPatch, EditRecipe, Flag, GlobalsPatch, Mask } from "./recipe/types";
 import { bitmapFromBlob, PreviewRenderer, thumbnailFromBitmap, type HistogramStats, type ViewMode } from "./render/preview";
 import { createSampleBitmap } from "./render/sampleImage";
 import { loadSettings, saveSettings, type AppSettings } from "./settings";
@@ -47,7 +47,9 @@ export default function App() {
     curve: true,
     hsl: true,
     detail: true,
+    masks: true,
   });
+  const [selectedMaskId, setSelectedMaskId] = useState<string | null>(null);
   const [hist, setHist] = useState<HistogramStats | null>(null);
   const [agentOpen, setAgentOpen] = useState(true);
   const [messages, setMessages] = useState<ChatMsg[]>([]);
@@ -115,6 +117,10 @@ export default function App() {
   useEffect(() => {
     rendererRef.current?.setRecipe(photo?.recipe ?? defaultRecipe());
   }, [photo?.recipe]);
+
+  useEffect(() => {
+    setSelectedMaskId(photo?.recipe.masks[0]?.id ?? null);
+  }, [photo?.id]);
 
   useEffect(() => {
     const renderer = rendererRef.current;
@@ -193,6 +199,32 @@ export default function App() {
     replacePhoto({ ...current, recipe: applyPatch(current.recipe, { globals: patch }, "absolute") }, false);
   }
 
+  function liveMask(mask: Mask) {
+    const current = photoRef.current;
+    if (!current) return;
+    setSelectedMaskId(mask.id);
+    replacePhoto(
+      { ...current, recipe: applyPatch(current.recipe, { masks: { upsert: [mask] } }, "absolute") },
+      false,
+    );
+  }
+
+  function addRadialMask() {
+    const current = photoRef.current;
+    if (!current) return;
+    const mask = createRadialMask({ params: { exposure: 0.5 } });
+    setSelectedMaskId(mask.id);
+    commitRecipe(applyPatch(current.recipe, { masks: { upsert: [mask] } }, "absolute"));
+  }
+
+  function removeSelectedMask() {
+    const current = photoRef.current;
+    if (!current || !selectedMaskId) return;
+    const next = applyPatch(current.recipe, { masks: { remove: [selectedMaskId] } }, "absolute");
+    setSelectedMaskId(next.masks[0]?.id ?? null);
+    commitRecipe(next);
+  }
+
   function commitHistory() {
     const current = photoRef.current;
     if (!current) return;
@@ -219,11 +251,12 @@ export default function App() {
   function applyNamedPreset(name: string) {
     const preset = presets.find((p) => p.name.toLowerCase() === name.toLowerCase());
     if (!preset) return `No preset named "${name}"`;
-    commitRecipe(applyPatch(defaultRecipe(), { globals: preset.recipe.globals }, "absolute"));
+    commitRecipe(cloneRecipe(preset.recipe));
     return `Applied ${preset.name}`;
   }
 
   const agentActions: AgentActions = {
+    getRecipe: () => photoRef.current?.recipe ?? defaultRecipe(),
     patchDevelop: (patch) => commitRecipe(applyPatch(photoRef.current?.recipe ?? defaultRecipe(), patch, "delta")),
     patchCatalog,
     applyPreset: applyNamedPreset,
@@ -340,7 +373,7 @@ export default function App() {
 
   function pasteSettings() {
     if (!clipboard) return;
-    commitRecipe(applyPatch(defaultRecipe(), { globals: clipboard.globals }, "absolute"));
+    commitRecipe(cloneRecipe(clipboard));
   }
 
   async function onAgent(text: string) {
@@ -478,6 +511,7 @@ export default function App() {
             recipe={photo.recipe}
             solo={solo}
             open={open}
+            selectedMaskId={selectedMaskId}
             onToggle={(id, alt) => {
               if (alt) {
                 setSolo((s) => (s === id ? null : id));
@@ -487,6 +521,10 @@ export default function App() {
             }}
             onLive={livePatch}
             onCommit={commitHistory}
+            onSelectMask={setSelectedMaskId}
+            onAddRadialMask={addRadialMask}
+            onRemoveMask={removeSelectedMask}
+            onLiveMask={liveMask}
           />
         ) : null}
       </aside>

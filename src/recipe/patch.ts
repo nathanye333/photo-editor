@@ -1,6 +1,7 @@
 import { defaultGlobals, defaultRecipe } from "./defaults";
 import {
   HSL_CHANNELS,
+  MAX_MASKS,
   RANGES,
   type CatalogPatch,
   type DevelopPatch,
@@ -9,6 +10,10 @@ import {
   type Globals,
   type GlobalsPatch,
   type HslAdjust,
+  type Mask,
+  type MaskComponent,
+  type MaskMode,
+  type MaskPatch,
   type PatchMode,
   type ToneCurve,
 } from "./types";
@@ -121,6 +126,149 @@ function applyGlobals(current: Globals, patch: GlobalsPatch | undefined, mode: P
   };
 }
 
+function clampMaskParams(params: Partial<Globals> | undefined): Partial<Globals> {
+  if (!params || typeof params !== "object") return {};
+  const patch = params as GlobalsPatch;
+  const full = applyGlobals(defaultGlobals(), patch, "absolute");
+  const out: Partial<Globals> = {};
+  const scalars: (keyof Omit<Globals, "hsl" | "toneCurve">)[] = [
+    "exposure",
+    "contrast",
+    "highlights",
+    "shadows",
+    "whites",
+    "blacks",
+    "temp",
+    "tint",
+    "vibrance",
+    "saturation",
+    "clarity",
+    "dehaze",
+    "sharpening",
+    "noiseReduction",
+    "lensCorrection",
+    "cropAngle",
+  ];
+  for (const key of scalars) {
+    if (params[key] !== undefined) out[key] = full[key];
+  }
+  if (patch.hsl) {
+    const hsl = { ...defaultGlobals().hsl };
+    for (const ch of HSL_CHANNELS) {
+      if (patch.hsl[ch]) hsl[ch] = full.hsl[ch];
+    }
+    out.hsl = hsl;
+  }
+  if (patch.toneCurve) out.toneCurve = full.toneCurve;
+  return out;
+}
+
+function normalizeComponent(c: MaskComponent): MaskComponent {
+  if (c.type === "radial") {
+    return {
+      type: "radial",
+      cx: clamp(num(c.cx, 0.5), RANGES.maskCoord),
+      cy: clamp(num(c.cy, 0.5), RANGES.maskCoord),
+      radiusX: clamp(num(c.radiusX, 0.35), RANGES.maskRadius),
+      radiusY: clamp(num(c.radiusY, 0.35), RANGES.maskRadius),
+      feather: clamp(num(c.feather, 50), RANGES.maskFeather),
+    };
+  }
+  if (c.type === "linear") {
+    return {
+      type: "linear",
+      start: [clamp(num(c.start?.[0], 0.5), RANGES.maskCoord), clamp(num(c.start?.[1], 0), RANGES.maskCoord)],
+      end: [clamp(num(c.end?.[0], 0.5), RANGES.maskCoord), clamp(num(c.end?.[1], 1), RANGES.maskCoord)],
+      feather: clamp(num(c.feather, 50), RANGES.maskFeather),
+    };
+  }
+  if (c.type === "luminance_range") {
+    return {
+      type: "luminance_range",
+      min: clamp(num(c.min, 0), [0, 1]),
+      max: clamp(num(c.max, 1), [0, 1]),
+      smooth: clamp(num(c.smooth, 0.1), [0, 1]),
+    };
+  }
+  if (c.type === "color_range") {
+    return {
+      type: "color_range",
+      hue: clamp(num(c.hue, 0), [0, 1]),
+      chroma: clamp(num(c.chroma, 0.5), [0, 1]),
+      tolerance: clamp(num(c.tolerance, 0.2), [0, 1]),
+    };
+  }
+  if (c.type === "semantic") {
+    return {
+      type: "semantic",
+      label: typeof c.label === "string" ? c.label : "subject",
+      model: typeof c.model === "string" ? c.model : "default",
+    };
+  }
+  return { type: "brush", strokes: Array.isArray(c.strokes) ? c.strokes : [] };
+}
+
+function normalizeMode(mode: unknown): MaskMode {
+  return mode === "subtract" || mode === "intersect" ? mode : "add";
+}
+
+export function normalizeMask(raw: Mask): Mask {
+  const components = Array.isArray(raw.components)
+    ? raw.components.map(normalizeComponent)
+    : [{ type: "radial" as const, cx: 0.5, cy: 0.5, radiusX: 0.35, radiusY: 0.35, feather: 50 }];
+  return {
+    id: typeof raw.id === "string" && raw.id ? raw.id : `mask-${Math.random().toString(36).slice(2, 9)}`,
+    name: typeof raw.name === "string" && raw.name ? raw.name : "Mask",
+    mode: normalizeMode(raw.mode),
+    components,
+    invert: Boolean(raw.invert),
+    feather: clamp(num(raw.feather, 50), RANGES.maskFeather),
+    density: clamp(num(raw.density, 100), RANGES.maskDensity),
+    params: clampMaskParams(raw.params),
+  };
+}
+
+/** Merge mask.params overrides onto globals for a local develop pass. */
+export function mergeMaskGlobals(globals: Globals, params: Partial<Globals>): Globals {
+  return applyGlobals(globals, params as GlobalsPatch, "absolute");
+}
+
+function applyMasks(current: Mask[], patch: MaskPatch | undefined): Mask[] {
+  if (!patch) return current.map(normalizeMask);
+
+  let next = current.map(normalizeMask);
+
+  if (patch.remove?.length) {
+    const drop = new Set(patch.remove);
+    next = next.filter((m) => !drop.has(m.id));
+  }
+
+  if (patch.upsert?.length) {
+    for (const raw of patch.upsert) {
+      const mask = normalizeMask(raw);
+      const idx = next.findIndex((m) => m.id === mask.id);
+      if (idx >= 0) next[idx] = mask;
+      else next.push(mask);
+    }
+  }
+
+  if (patch.reorder?.length) {
+    const byId = new Map(next.map((m) => [m.id, m]));
+    const ordered: Mask[] = [];
+    for (const id of patch.reorder) {
+      const m = byId.get(id);
+      if (m) {
+        ordered.push(m);
+        byId.delete(id);
+      }
+    }
+    for (const m of byId.values()) ordered.push(m);
+    next = ordered;
+  }
+
+  return next.slice(0, MAX_MASKS);
+}
+
 /** Only mutation path for develop params (UI, presets, paste, undo, agent). */
 export function applyPatch(
   recipe: EditRecipe,
@@ -130,7 +278,7 @@ export function applyPatch(
   return {
     version: recipe.version,
     globals: applyGlobals(recipe.globals, patch.globals, mode),
-    masks: recipe.masks,
+    masks: applyMasks(recipe.masks, patch.masks),
   };
 }
 
@@ -153,7 +301,7 @@ export function parseRecipe(raw: unknown): EditRecipe {
     {
       version: 1,
       globals: { ...defaultGlobals(), ...g, hsl: { ...defaultGlobals().hsl, ...g.hsl } },
-      masks: Array.isArray(obj.masks) ? obj.masks : [],
+      masks: Array.isArray(obj.masks) ? (obj.masks as Mask[]) : [],
     },
     { globals: {} },
     "absolute",

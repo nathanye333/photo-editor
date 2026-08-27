@@ -1,4 +1,4 @@
-export type ToolCategory = "tone" | "color" | "detail" | "catalog" | "presets";
+export type ToolCategory = "tone" | "color" | "detail" | "catalog" | "presets" | "masks";
 
 const KEYWORDS: Record<ToolCategory, string[]> = {
   tone: [
@@ -31,6 +31,18 @@ const KEYWORDS: Record<ToolCategory, string[]> = {
   detail: ["sharp", "noise", "clarity", "dehaze", "haze", "midtone contrast"],
   catalog: ["star", "rate", "flag", "pick", "reject", "cull", "rating"],
   presets: ["preset", "reset", "copy settings", "paste", "undo look"],
+  masks: [
+    "mask",
+    "radial",
+    "local",
+    "dodge",
+    "burn",
+    "subject",
+    "center",
+    "vignette",
+    "region",
+    "area",
+  ],
 };
 
 export const CATEGORY_DOCS: Record<ToolCategory, string> = {
@@ -40,6 +52,8 @@ export const CATEGORY_DOCS: Record<ToolCategory, string> = {
   detail: "Detail/presence: clarity, dehaze, sharpening, noiseReduction.",
   catalog: "Catalog: apply_catalog_patch with rating 0-5 and flag pick|reject|unflagged.",
   presets: "Presets: apply_preset by name, reset_recipe, copy_settings.",
+  masks:
+    "Masks: upsert_mask for radial local adjustments (cx,cy,radiusX,radiusY 0–1; params.exposure etc). remove_mask by id. Prefer masks for localized brighten/darken.",
 };
 
 export function routeCategories(instruction: string): ToolCategory[] {

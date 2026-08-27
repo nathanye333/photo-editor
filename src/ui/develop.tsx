@@ -1,17 +1,35 @@
 import { useState } from "react";
-import { HSL_CHANNELS, RANGES, type EditRecipe, type GlobalsPatch, type HslChannel } from "../recipe/types";
+import { HSL_CHANNELS, RANGES, type EditRecipe, type GlobalsPatch, type HslChannel, type Mask } from "../recipe/types";
 import { Panel, Slider } from "./controls";
+import { MasksPanel } from "./masks";
 
 type Props = {
   recipe: EditRecipe;
   solo: string | null;
   open: Record<string, boolean>;
+  selectedMaskId: string | null;
   onToggle: (id: string, alt: boolean) => void;
   onLive: (patch: GlobalsPatch) => void;
   onCommit: () => void;
+  onSelectMask: (id: string) => void;
+  onAddRadialMask: () => void;
+  onRemoveMask: () => void;
+  onLiveMask: (mask: Mask) => void;
 };
 
-export function DevelopPanels({ recipe, solo, open, onToggle, onLive, onCommit }: Props) {
+export function DevelopPanels({
+  recipe,
+  solo,
+  open,
+  selectedMaskId,
+  onToggle,
+  onLive,
+  onCommit,
+  onSelectMask,
+  onAddRadialMask,
+  onRemoveMask,
+  onLiveMask,
+}: Props) {
   const [hslCh, setHslCh] = useState<HslChannel>("orange");
   const g = recipe.globals;
   const panel = (id: string, title: string) => ({ id, title, solo, open, onToggle });
@@ -106,6 +124,18 @@ export function DevelopPanels({ recipe, solo, open, onToggle, onLive, onCommit }
         {num("clarity", "Clarity", RANGES.clarity, 1)}
         {num("dehaze", "Dehaze", RANGES.dehaze, 1)}
       </Panel>
+      <MasksPanel
+        masks={recipe.masks}
+        selectedId={selectedMaskId}
+        solo={solo}
+        open={open}
+        onToggle={onToggle}
+        onSelect={onSelectMask}
+        onAddRadial={onAddRadialMask}
+        onRemove={onRemoveMask}
+        onLiveMask={onLiveMask}
+        onCommit={onCommit}
+      />
       <Panel {...panel("optics", "Optics")}>
         {num("lensCorrection", "Lens correction", RANGES.lensCorrection, 1)}
         <p className="stub">Stored on the recipe; no profile library in v1.</p>

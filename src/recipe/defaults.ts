@@ -3,6 +3,7 @@ import {
   type EditRecipe,
   type Globals,
   type HslAdjust,
+  type Mask,
   RECIPE_VERSION,
 } from "./types";
 
@@ -50,4 +51,40 @@ export function defaultRecipe(): EditRecipe {
 
 export function cloneRecipe(recipe: EditRecipe): EditRecipe {
   return structuredClone(recipe);
+}
+
+let maskSeq = 0;
+
+/** Create a radial local-adjustment mask with sensible defaults. */
+export function createRadialMask(
+  partial?: Partial<Omit<Mask, "components">> & {
+    id?: string;
+    cx?: number;
+    cy?: number;
+    radiusX?: number;
+    radiusY?: number;
+    componentFeather?: number;
+  },
+): Mask {
+  maskSeq += 1;
+  const id = partial?.id ?? `mask-${Date.now().toString(36)}-${maskSeq}`;
+  return {
+    id,
+    name: partial?.name ?? `Radial ${maskSeq}`,
+    mode: partial?.mode ?? "add",
+    components: [
+      {
+        type: "radial",
+        cx: partial?.cx ?? 0.5,
+        cy: partial?.cy ?? 0.5,
+        radiusX: partial?.radiusX ?? 0.35,
+        radiusY: partial?.radiusY ?? 0.35,
+        feather: partial?.componentFeather ?? 50,
+      },
+    ],
+    invert: partial?.invert ?? false,
+    feather: partial?.feather ?? 50,
+    density: partial?.density ?? 100,
+    params: partial?.params ?? {},
+  };
 }

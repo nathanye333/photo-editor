@@ -1,6 +1,7 @@
 import { defaultRecipe } from "../recipe/defaults";
-import { HSL_CHANNELS, type EditRecipe } from "../recipe/types";
-import { FRAG, VERT } from "./shader";
+import { mergeMaskGlobals } from "../recipe/patch";
+import { HSL_CHANNELS, MAX_MASKS, type EditRecipe, type Globals, type Mask } from "../recipe/types";
+import { BLIT_FRAG, FRAG, MIX_FRAG, VERT } from "./shader";
 
 export type HistogramStats = {
   bins: number[];
@@ -24,16 +25,72 @@ function compile(gl: WebGL2RenderingContext, type: number, src: string): WebGLSh
   return sh;
 }
 
+function linkProgram(gl: WebGL2RenderingContext, vs: WebGLShader, fsSrc: string): WebGLProgram {
+  const fs = compile(gl, gl.FRAGMENT_SHADER, fsSrc);
+  const program = gl.createProgram();
+  if (!program) throw new Error("program");
+  gl.attachShader(program, vs);
+  gl.attachShader(program, fs);
+  gl.bindAttribLocation(program, 0, "aPos");
+  gl.bindAttribLocation(program, 1, "aUv");
+  gl.linkProgram(program);
+  gl.deleteShader(fs);
+  if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+    throw new Error(gl.getProgramInfoLog(program) ?? "link");
+  }
+  return program;
+}
+
 function loc(gl: WebGL2RenderingContext, program: WebGLProgram, name: string): WebGLUniformLocation {
   const l = gl.getUniformLocation(program, name);
   if (!l) throw new Error(`uniform ${name}`);
   return l;
 }
 
+type Fbo = {
+  fbo: WebGLFramebuffer;
+  tex: WebGLTexture;
+  w: number;
+  h: number;
+};
+
+function createFbo(gl: WebGL2RenderingContext, w: number, h: number): Fbo {
+  const tex = gl.createTexture();
+  const fbo = gl.createFramebuffer();
+  if (!tex || !fbo) throw new Error("fbo");
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+  const status = gl.checkFramebufferStatus(gl.FRAMEBUFFER);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  if (status !== gl.FRAMEBUFFER_COMPLETE) throw new Error("incomplete fbo");
+  return { fbo, tex, w, h };
+}
+
+function destroyFbo(gl: WebGL2RenderingContext, target: Fbo | null) {
+  if (!target) return;
+  gl.deleteFramebuffer(target.fbo);
+  gl.deleteTexture(target.tex);
+}
+
+function firstRadial(mask: Mask): Extract<Mask["components"][number], { type: "radial" }> | null {
+  for (const c of mask.components) {
+    if (c.type === "radial") return c;
+  }
+  return null;
+}
+
 export class PreviewRenderer {
   readonly canvas: HTMLCanvasElement;
   private gl: WebGL2RenderingContext;
-  private program: WebGLProgram;
+  private developProgram: WebGLProgram;
+  private mixProgram: WebGLProgram;
+  private blitProgram: WebGLProgram;
   private vao: WebGLVertexArrayObject;
   private texture: WebGLTexture;
   private image: ImageBitmap | null = null;
@@ -43,6 +100,9 @@ export class PreviewRenderer {
   private dirty = false;
   private hist: HistogramStats | null = null;
   private onHist: ((h: HistogramStats) => void) | null = null;
+  private resultA: Fbo | null = null;
+  private resultB: Fbo | null = null;
+  private localFbo: Fbo | null = null;
 
   constructor(canvas: HTMLCanvasElement) {
     const gl = canvas.getContext("webgl2", { premultipliedAlpha: false, preserveDrawingBuffer: true });
@@ -50,18 +110,10 @@ export class PreviewRenderer {
     this.canvas = canvas;
     this.gl = gl;
     const vs = compile(gl, gl.VERTEX_SHADER, VERT);
-    const fs = compile(gl, gl.FRAGMENT_SHADER, FRAG);
-    const program = gl.createProgram();
-    if (!program) throw new Error("program");
-    gl.attachShader(program, vs);
-    gl.attachShader(program, fs);
-    gl.bindAttribLocation(program, 0, "aPos");
-    gl.bindAttribLocation(program, 1, "aUv");
-    gl.linkProgram(program);
-    if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
-      throw new Error(gl.getProgramInfoLog(program) ?? "link");
-    }
-    this.program = program;
+    this.developProgram = linkProgram(gl, vs, FRAG);
+    this.mixProgram = linkProgram(gl, vs, MIX_FRAG);
+    this.blitProgram = linkProgram(gl, vs, BLIT_FRAG);
+    gl.deleteShader(vs);
 
     const buf = gl.createBuffer();
     const vao = gl.createVertexArray();
@@ -148,53 +200,151 @@ export class PreviewRenderer {
     });
   }
 
+  private ensureFbos(w: number, h: number) {
+    const gl = this.gl;
+    const ok = (f: Fbo | null) => f && f.w === w && f.h === h;
+    if (ok(this.resultA) && ok(this.resultB) && ok(this.localFbo)) return;
+    destroyFbo(gl, this.resultA);
+    destroyFbo(gl, this.resultB);
+    destroyFbo(gl, this.localFbo);
+    this.resultA = createFbo(gl, w, h);
+    this.resultB = createFbo(gl, w, h);
+    this.localFbo = createFbo(gl, w, h);
+  }
+
+  private setDevelopUniforms(program: WebGLProgram, g: Globals) {
+    const gl = this.gl;
+    gl.uniform1i(loc(gl, program, "uImage"), 0);
+    gl.uniform1f(loc(gl, program, "uExposure"), g.exposure);
+    gl.uniform1f(loc(gl, program, "uContrast"), g.contrast);
+    gl.uniform1f(loc(gl, program, "uHighlights"), g.highlights);
+    gl.uniform1f(loc(gl, program, "uShadows"), g.shadows);
+    gl.uniform1f(loc(gl, program, "uWhites"), g.whites);
+    gl.uniform1f(loc(gl, program, "uBlacks"), g.blacks);
+    gl.uniform1f(loc(gl, program, "uTemp"), g.temp);
+    gl.uniform1f(loc(gl, program, "uTint"), g.tint);
+    gl.uniform1f(loc(gl, program, "uVibrance"), g.vibrance);
+    gl.uniform1f(loc(gl, program, "uSaturation"), g.saturation);
+    gl.uniform1fv(
+      loc(gl, program, "uHslH"),
+      HSL_CHANNELS.map((c) => g.hsl[c].hue),
+    );
+    gl.uniform1fv(
+      loc(gl, program, "uHslS"),
+      HSL_CHANNELS.map((c) => g.hsl[c].sat),
+    );
+    gl.uniform1fv(
+      loc(gl, program, "uHslL"),
+      HSL_CHANNELS.map((c) => g.hsl[c].lum),
+    );
+    gl.uniform1f(loc(gl, program, "uCurveHi"), g.toneCurve.highlights);
+    gl.uniform1f(loc(gl, program, "uCurveLi"), g.toneCurve.lights);
+    gl.uniform1f(loc(gl, program, "uCurveDk"), g.toneCurve.darks);
+    gl.uniform1f(loc(gl, program, "uCurveSh"), g.toneCurve.shadows);
+    gl.uniform1f(loc(gl, program, "uClarity"), g.clarity);
+    gl.uniform1f(loc(gl, program, "uDehaze"), g.dehaze);
+    gl.uniform1f(loc(gl, program, "uSharpen"), g.sharpening);
+    gl.uniform1f(loc(gl, program, "uNR"), g.noiseReduction);
+  }
+
+  private drawDevelop(target: WebGLFramebuffer | null, g: Globals, w: number, h: number) {
+    const gl = this.gl;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, target);
+    gl.viewport(0, 0, w, h);
+    gl.useProgram(this.developProgram);
+    gl.bindVertexArray(this.vao);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, this.texture);
+    this.setDevelopUniforms(this.developProgram, g);
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+  }
+
+  private drawMix(
+    target: WebGLFramebuffer,
+    prev: WebGLTexture,
+    local: WebGLTexture,
+    radial: Extract<Mask["components"][number], { type: "radial" }>,
+    mask: Mask,
+    w: number,
+    h: number,
+  ) {
+    const gl = this.gl;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, target);
+    gl.viewport(0, 0, w, h);
+    gl.useProgram(this.mixProgram);
+    gl.bindVertexArray(this.vao);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, prev);
+    gl.uniform1i(loc(gl, this.mixProgram, "uPrev"), 0);
+    gl.activeTexture(gl.TEXTURE1);
+    gl.bindTexture(gl.TEXTURE_2D, local);
+    gl.uniform1i(loc(gl, this.mixProgram, "uLocal"), 1);
+    const feather = Math.max(mask.feather, radial.feather);
+    gl.uniform1f(loc(gl, this.mixProgram, "uCx"), radial.cx);
+    gl.uniform1f(loc(gl, this.mixProgram, "uCy"), radial.cy);
+    gl.uniform1f(loc(gl, this.mixProgram, "uRadiusX"), radial.radiusX);
+    gl.uniform1f(loc(gl, this.mixProgram, "uRadiusY"), radial.radiusY);
+    gl.uniform1f(loc(gl, this.mixProgram, "uFeather"), feather);
+    gl.uniform1f(loc(gl, this.mixProgram, "uDensity"), mask.density);
+    gl.uniform1f(loc(gl, this.mixProgram, "uInvert"), mask.invert || mask.mode === "subtract" ? 1 : 0);
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+  }
+
+  private blitToCanvas(tex: WebGLTexture, w: number, h: number) {
+    const gl = this.gl;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.viewport(0, 0, w, h);
+    gl.useProgram(this.blitProgram);
+    gl.bindVertexArray(this.vao);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.uniform1i(loc(gl, this.blitProgram, "uTex"), 0);
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+  }
+
   render() {
     this.dirty = false;
     const gl = this.gl;
     const { canvas } = this;
-    gl.viewport(0, 0, canvas.width, canvas.height);
+    const w = canvas.width;
+    const h = canvas.height;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.viewport(0, 0, w, h);
     gl.clearColor(0.08, 0.08, 0.09, 1);
     gl.clear(gl.COLOR_BUFFER_BIT);
     if (!this.image) return;
 
     const recipe = this.before ? defaultRecipe() : this.recipe;
-    const g = recipe.globals;
-    gl.useProgram(this.program);
-    gl.bindVertexArray(this.vao);
-    gl.activeTexture(gl.TEXTURE0);
-    gl.bindTexture(gl.TEXTURE_2D, this.texture);
-    gl.uniform1i(loc(gl, this.program, "uImage"), 0);
-    gl.uniform1f(loc(gl, this.program, "uExposure"), g.exposure);
-    gl.uniform1f(loc(gl, this.program, "uContrast"), g.contrast);
-    gl.uniform1f(loc(gl, this.program, "uHighlights"), g.highlights);
-    gl.uniform1f(loc(gl, this.program, "uShadows"), g.shadows);
-    gl.uniform1f(loc(gl, this.program, "uWhites"), g.whites);
-    gl.uniform1f(loc(gl, this.program, "uBlacks"), g.blacks);
-    gl.uniform1f(loc(gl, this.program, "uTemp"), g.temp);
-    gl.uniform1f(loc(gl, this.program, "uTint"), g.tint);
-    gl.uniform1f(loc(gl, this.program, "uVibrance"), g.vibrance);
-    gl.uniform1f(loc(gl, this.program, "uSaturation"), g.saturation);
-    gl.uniform1fv(
-      loc(gl, this.program, "uHslH"),
-      HSL_CHANNELS.map((c) => g.hsl[c].hue),
-    );
-    gl.uniform1fv(
-      loc(gl, this.program, "uHslS"),
-      HSL_CHANNELS.map((c) => g.hsl[c].sat),
-    );
-    gl.uniform1fv(
-      loc(gl, this.program, "uHslL"),
-      HSL_CHANNELS.map((c) => g.hsl[c].lum),
-    );
-    gl.uniform1f(loc(gl, this.program, "uCurveHi"), g.toneCurve.highlights);
-    gl.uniform1f(loc(gl, this.program, "uCurveLi"), g.toneCurve.lights);
-    gl.uniform1f(loc(gl, this.program, "uCurveDk"), g.toneCurve.darks);
-    gl.uniform1f(loc(gl, this.program, "uCurveSh"), g.toneCurve.shadows);
-    gl.uniform1f(loc(gl, this.program, "uClarity"), g.clarity);
-    gl.uniform1f(loc(gl, this.program, "uDehaze"), g.dehaze);
-    gl.uniform1f(loc(gl, this.program, "uSharpen"), g.sharpening);
-    gl.uniform1f(loc(gl, this.program, "uNR"), g.noiseReduction);
-    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    const radialMasks = recipe.masks
+      .slice(0, MAX_MASKS)
+      .map((m) => ({ mask: m, radial: firstRadial(m) }))
+      .filter((x): x is { mask: Mask; radial: NonNullable<ReturnType<typeof firstRadial>> } => x.radial !== null);
+
+    if (radialMasks.length === 0) {
+      this.drawDevelop(null, recipe.globals, w, h);
+      this.sampleHistogram();
+      return;
+    }
+
+    this.ensureFbos(w, h);
+    const resultA = this.resultA!;
+    const resultB = this.resultB!;
+    const localFbo = this.localFbo!;
+
+    this.drawDevelop(resultA.fbo, recipe.globals, w, h);
+
+    let read = resultA;
+    let write = resultB;
+    for (const { mask, radial } of radialMasks) {
+      const localGlobals = mergeMaskGlobals(recipe.globals, mask.params);
+      this.drawDevelop(localFbo.fbo, localGlobals, w, h);
+      this.drawMix(write.fbo, read.tex, localFbo.tex, radial, mask, w, h);
+      const tmp = read;
+      read = write;
+      write = tmp;
+    }
+
+    this.blitToCanvas(read.tex, w, h);
     this.sampleHistogram();
   }
 
@@ -249,6 +399,13 @@ export class PreviewRenderer {
 
   dispose() {
     cancelAnimationFrame(this.raf);
+    const gl = this.gl;
+    destroyFbo(gl, this.resultA);
+    destroyFbo(gl, this.resultB);
+    destroyFbo(gl, this.localFbo);
+    this.resultA = null;
+    this.resultB = null;
+    this.localFbo = null;
     this.image?.close();
   }
 }
