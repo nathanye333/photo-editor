@@ -1,7 +1,24 @@
 import { defaultRecipe } from "../recipe/defaults";
 import { mergeMaskGlobals } from "../recipe/patch";
-import { HSL_CHANNELS, MAX_MASKS, type EditRecipe, type Globals, type Mask } from "../recipe/types";
-import { BLIT_FRAG, FRAG, MIX_FRAG, VERT } from "./shader";
+import {
+  HSL_CHANNELS,
+  MAX_MASKS,
+  primaryComponent,
+  type EditRecipe,
+  type Globals,
+  type Mask,
+  type MaskComponent,
+} from "../recipe/types";
+import { rasterizeBrushStrokes, rgbToHueChroma } from "./brushRaster";
+import {
+  BLIT_FRAG,
+  FRAG,
+  MIX_FRAG,
+  VERT,
+  WEIGHT_COLOR_FRAG,
+  WEIGHT_LUMA_FRAG,
+  WEIGHT_RADIAL_FRAG,
+} from "./shader";
 
 export type HistogramStats = {
   bins: number[];
@@ -11,6 +28,15 @@ export type HistogramStats = {
 };
 
 export type ViewMode = "fit" | "1:1";
+
+export type SourceSample = {
+  r: number;
+  g: number;
+  b: number;
+  hue: number;
+  chroma: number;
+  luma: number;
+};
 
 function compile(gl: WebGL2RenderingContext, type: number, src: string): WebGLShader {
   const sh = gl.createShader(type);
@@ -78,11 +104,14 @@ function destroyFbo(gl: WebGL2RenderingContext, target: Fbo | null) {
   gl.deleteTexture(target.tex);
 }
 
-function firstRadial(mask: Mask): Extract<Mask["components"][number], { type: "radial" }> | null {
-  for (const c of mask.components) {
-    if (c.type === "radial") return c;
-  }
-  return null;
+function isRenderableComponent(c: MaskComponent | null): boolean {
+  return (
+    !!c &&
+    (c.type === "radial" ||
+      c.type === "brush" ||
+      c.type === "luminance_range" ||
+      c.type === "color_range")
+  );
 }
 
 export class PreviewRenderer {
@@ -91,9 +120,14 @@ export class PreviewRenderer {
   private developProgram: WebGLProgram;
   private mixProgram: WebGLProgram;
   private blitProgram: WebGLProgram;
+  private weightRadialProgram: WebGLProgram;
+  private weightLumaProgram: WebGLProgram;
+  private weightColorProgram: WebGLProgram;
   private vao: WebGLVertexArrayObject;
   private texture: WebGLTexture;
+  private brushTex: WebGLTexture;
   private image: ImageBitmap | null = null;
+  private sourcePixels: ImageData | null = null;
   private recipe: EditRecipe = defaultRecipe();
   private before = false;
   private raf = 0;
@@ -103,6 +137,7 @@ export class PreviewRenderer {
   private resultA: Fbo | null = null;
   private resultB: Fbo | null = null;
   private localFbo: Fbo | null = null;
+  private weightFbo: Fbo | null = null;
 
   constructor(canvas: HTMLCanvasElement) {
     const gl = canvas.getContext("webgl2", { premultipliedAlpha: false, preserveDrawingBuffer: true });
@@ -113,6 +148,9 @@ export class PreviewRenderer {
     this.developProgram = linkProgram(gl, vs, FRAG);
     this.mixProgram = linkProgram(gl, vs, MIX_FRAG);
     this.blitProgram = linkProgram(gl, vs, BLIT_FRAG);
+    this.weightRadialProgram = linkProgram(gl, vs, WEIGHT_RADIAL_FRAG);
+    this.weightLumaProgram = linkProgram(gl, vs, WEIGHT_LUMA_FRAG);
+    this.weightColorProgram = linkProgram(gl, vs, WEIGHT_COLOR_FRAG);
     gl.deleteShader(vs);
 
     const buf = gl.createBuffer();
@@ -132,13 +170,17 @@ export class PreviewRenderer {
     this.vao = vao;
 
     const tex = gl.createTexture();
-    if (!tex) throw new Error("tex");
-    gl.bindTexture(gl.TEXTURE_2D, tex);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    const brushTex = gl.createTexture();
+    if (!tex || !brushTex) throw new Error("tex");
+    for (const t of [tex, brushTex]) {
+      gl.bindTexture(gl.TEXTURE_2D, t);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    }
     this.texture = tex;
+    this.brushTex = brushTex;
   }
 
   setHistogramListener(fn: ((h: HistogramStats) => void) | null) {
@@ -148,6 +190,7 @@ export class PreviewRenderer {
   setImage(image: ImageBitmap | null) {
     if (this.image && this.image !== image) this.image.close();
     this.image = image;
+    this.sourcePixels = null;
     if (!image) {
       this.schedule();
       return;
@@ -156,6 +199,15 @@ export class PreviewRenderer {
     gl.bindTexture(gl.TEXTURE_2D, this.texture);
     gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, 1);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
+
+    const c = document.createElement("canvas");
+    c.width = image.width;
+    c.height = image.height;
+    const ctx = c.getContext("2d", { willReadFrequently: true });
+    if (ctx) {
+      ctx.drawImage(image, 0, 0);
+      this.sourcePixels = ctx.getImageData(0, 0, c.width, c.height);
+    }
     this.schedule();
   }
 
@@ -171,6 +223,20 @@ export class PreviewRenderer {
 
   imageSize(): { w: number; h: number } | null {
     return this.image ? { w: this.image.width, h: this.image.height } : null;
+  }
+
+  /** Sample source image at normalized UV (origin top-left). */
+  sampleSource(uvX: number, uvY: number): SourceSample | null {
+    const px = this.sourcePixels;
+    if (!px) return null;
+    const x = Math.min(px.width - 1, Math.max(0, Math.floor(uvX * px.width)));
+    const y = Math.min(px.height - 1, Math.max(0, Math.floor(uvY * px.height)));
+    const i = (y * px.width + x) * 4;
+    const r = px.data[i] / 255;
+    const g = px.data[i + 1] / 255;
+    const b = px.data[i + 2] / 255;
+    const hc = rgbToHueChroma(r, g, b);
+    return { r, g, b, ...hc };
   }
 
   layout(view: ViewMode, hostW: number, hostH: number) {
@@ -203,13 +269,15 @@ export class PreviewRenderer {
   private ensureFbos(w: number, h: number) {
     const gl = this.gl;
     const ok = (f: Fbo | null) => f && f.w === w && f.h === h;
-    if (ok(this.resultA) && ok(this.resultB) && ok(this.localFbo)) return;
+    if (ok(this.resultA) && ok(this.resultB) && ok(this.localFbo) && ok(this.weightFbo)) return;
     destroyFbo(gl, this.resultA);
     destroyFbo(gl, this.resultB);
     destroyFbo(gl, this.localFbo);
+    destroyFbo(gl, this.weightFbo);
     this.resultA = createFbo(gl, w, h);
     this.resultB = createFbo(gl, w, h);
     this.localFbo = createFbo(gl, w, h);
+    this.weightFbo = createFbo(gl, w, h);
   }
 
   private setDevelopUniforms(program: WebGLProgram, g: Globals) {
@@ -259,15 +327,65 @@ export class PreviewRenderer {
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
   }
 
-  private drawMix(
-    target: WebGLFramebuffer,
-    prev: WebGLTexture,
-    local: WebGLTexture,
-    radial: Extract<Mask["components"][number], { type: "radial" }>,
-    mask: Mask,
-    w: number,
-    h: number,
-  ) {
+  private drawWeight(component: MaskComponent, mask: Mask, w: number, h: number) {
+    const gl = this.gl;
+    const target = this.weightFbo!;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, target.fbo);
+    gl.viewport(0, 0, w, h);
+    gl.clearColor(0, 0, 0, 1);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.bindVertexArray(this.vao);
+
+    if (component.type === "radial") {
+      gl.useProgram(this.weightRadialProgram);
+      const feather = Math.max(mask.feather, component.feather);
+      gl.uniform1f(loc(gl, this.weightRadialProgram, "uCx"), component.cx);
+      gl.uniform1f(loc(gl, this.weightRadialProgram, "uCy"), component.cy);
+      gl.uniform1f(loc(gl, this.weightRadialProgram, "uRadiusX"), component.radiusX);
+      gl.uniform1f(loc(gl, this.weightRadialProgram, "uRadiusY"), component.radiusY);
+      gl.uniform1f(loc(gl, this.weightRadialProgram, "uFeather"), feather);
+      gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+      return;
+    }
+
+    if (component.type === "luminance_range") {
+      gl.useProgram(this.weightLumaProgram);
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, this.texture);
+      gl.uniform1i(loc(gl, this.weightLumaProgram, "uImage"), 0);
+      gl.uniform1f(loc(gl, this.weightLumaProgram, "uMin"), component.min);
+      gl.uniform1f(loc(gl, this.weightLumaProgram, "uMax"), component.max);
+      gl.uniform1f(loc(gl, this.weightLumaProgram, "uSmooth"), component.smooth);
+      gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+      return;
+    }
+
+    if (component.type === "color_range") {
+      gl.useProgram(this.weightColorProgram);
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, this.texture);
+      gl.uniform1i(loc(gl, this.weightColorProgram, "uImage"), 0);
+      gl.uniform1f(loc(gl, this.weightColorProgram, "uHue"), component.hue);
+      gl.uniform1f(loc(gl, this.weightColorProgram, "uChroma"), component.chroma);
+      gl.uniform1f(loc(gl, this.weightColorProgram, "uTolerance"), component.tolerance);
+      gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+      return;
+    }
+
+    if (component.type === "brush") {
+      const data = rasterizeBrushStrokes(component.strokes, w, h);
+      gl.bindTexture(gl.TEXTURE_2D, this.brushTex);
+      gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, 1);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, data.data);
+      gl.useProgram(this.blitProgram);
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, this.brushTex);
+      gl.uniform1i(loc(gl, this.blitProgram, "uTex"), 0);
+      gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    }
+  }
+
+  private drawMix(target: WebGLFramebuffer, prev: WebGLTexture, local: WebGLTexture, mask: Mask, w: number, h: number) {
     const gl = this.gl;
     gl.bindFramebuffer(gl.FRAMEBUFFER, target);
     gl.viewport(0, 0, w, h);
@@ -279,12 +397,9 @@ export class PreviewRenderer {
     gl.activeTexture(gl.TEXTURE1);
     gl.bindTexture(gl.TEXTURE_2D, local);
     gl.uniform1i(loc(gl, this.mixProgram, "uLocal"), 1);
-    const feather = Math.max(mask.feather, radial.feather);
-    gl.uniform1f(loc(gl, this.mixProgram, "uCx"), radial.cx);
-    gl.uniform1f(loc(gl, this.mixProgram, "uCy"), radial.cy);
-    gl.uniform1f(loc(gl, this.mixProgram, "uRadiusX"), radial.radiusX);
-    gl.uniform1f(loc(gl, this.mixProgram, "uRadiusY"), radial.radiusY);
-    gl.uniform1f(loc(gl, this.mixProgram, "uFeather"), feather);
+    gl.activeTexture(gl.TEXTURE2);
+    gl.bindTexture(gl.TEXTURE_2D, this.weightFbo!.tex);
+    gl.uniform1i(loc(gl, this.mixProgram, "uWeight"), 2);
     gl.uniform1f(loc(gl, this.mixProgram, "uDensity"), mask.density);
     gl.uniform1f(loc(gl, this.mixProgram, "uInvert"), mask.invert || mask.mode === "subtract" ? 1 : 0);
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
@@ -315,12 +430,12 @@ export class PreviewRenderer {
     if (!this.image) return;
 
     const recipe = this.before ? defaultRecipe() : this.recipe;
-    const radialMasks = recipe.masks
+    const masks = recipe.masks
       .slice(0, MAX_MASKS)
-      .map((m) => ({ mask: m, radial: firstRadial(m) }))
-      .filter((x): x is { mask: Mask; radial: NonNullable<ReturnType<typeof firstRadial>> } => x.radial !== null);
+      .map((mask) => ({ mask, component: primaryComponent(mask) }))
+      .filter((x): x is { mask: Mask; component: MaskComponent } => isRenderableComponent(x.component));
 
-    if (radialMasks.length === 0) {
+    if (masks.length === 0) {
       this.drawDevelop(null, recipe.globals, w, h);
       this.sampleHistogram();
       return;
@@ -335,10 +450,11 @@ export class PreviewRenderer {
 
     let read = resultA;
     let write = resultB;
-    for (const { mask, radial } of radialMasks) {
+    for (const { mask, component } of masks) {
       const localGlobals = mergeMaskGlobals(recipe.globals, mask.params);
       this.drawDevelop(localFbo.fbo, localGlobals, w, h);
-      this.drawMix(write.fbo, read.tex, localFbo.tex, radial, mask, w, h);
+      this.drawWeight(component, mask, w, h);
+      this.drawMix(write.fbo, read.tex, localFbo.tex, mask, w, h);
       const tmp = read;
       read = write;
       write = tmp;
@@ -403,9 +519,11 @@ export class PreviewRenderer {
     destroyFbo(gl, this.resultA);
     destroyFbo(gl, this.resultB);
     destroyFbo(gl, this.localFbo);
+    destroyFbo(gl, this.weightFbo);
     this.resultA = null;
     this.resultB = null;
     this.localFbo = null;
+    this.weightFbo = null;
     this.image?.close();
   }
 }

@@ -62,17 +62,17 @@ Highest-impact develop gap. Schema is ready in `src/recipe/types.ts`.
 - [x] Mask UI (create, invert, feather, density; rename/reorder deferred)
 - [x] Radial gradient mask
 - [ ] Linear gradient mask
-- [ ] Brush mask (with add / subtract / intersect modes)
-- [ ] Luminance range mask
-- [ ] Color range mask
+- [x] Brush mask (paint add/erase on preview; size, hardness, opacity)
+- [x] Luminance range mask (click preview to center range)
+- [x] Color range mask (click preview to sample color)
 - [x] Per-mask develop params (partial `Globals` override — exposure/tone subset in UI)
 - [x] WebGL mask compositing in preview renderer
-- [x] Agent tool support for mask patches (`upsert_mask` / `remove_mask`)
+- [x] Agent tool support for mask patches (`upsert_mask` / `upsert_brush_mask` / `upsert_luminance_mask` / `upsert_color_mask` / `remove_mask`)
 - [ ] Semantic mask component (typed; model integration TBD)
 
-**Exit criteria:** Apply a radial gradient exposure boost to a subject; see it in preview, undo, export, and via agent. **Met for radial MVP.**
+**Exit criteria:** Apply a radial gradient exposure boost to a subject; see it in preview, undo, export, and via agent. **Met.** Brush / color / luma selection also shipped.
 
-**Phase 2 (remaining):** linear / range / brush / semantic masks; canvas drag handles; rename/reorder UI; full per-mask Basic panel.
+**Still deferred:** linear gradient; semantic/subject AI; canvas drag handles for radial; rename/reorder UI; full per-mask Basic panel; mask overlay visualization.
 
 ---
 
@@ -261,7 +261,7 @@ Features where Field intentionally diverges from Lightroom:
 
 ```
 v1    ✅  Globals, library basics, agent, JPEG export
-v1.5  ~   Masks (radial MVP shipped; linear/brush/semantic next)
+v1.5  ~   Masks (brush, color, luma, radial shipped; linear/semantic next)
 v1.6  →   RAW decode + crop / transform
 v1.7  →   Color grading, lens profiles, full detail, point curve
 v2.0  →   Collections, keywords, culling views, virtual copies

@@ -1,5 +1,6 @@
 import {
   HSL_CHANNELS,
+  type BrushStroke,
   type EditRecipe,
   type Globals,
   type HslAdjust,
@@ -55,10 +56,29 @@ export function cloneRecipe(recipe: EditRecipe): EditRecipe {
 
 let maskSeq = 0;
 
+function allocName(kind: string) {
+  maskSeq += 1;
+  return { seq: maskSeq, name: `${kind} ${maskSeq}`, id: `mask-${Date.now().toString(36)}-${maskSeq}` };
+}
+
+type MaskMeta = Partial<Omit<Mask, "components">>;
+
+function baseMask(fallbackName: string, fallbackId: string, components: Mask["components"], partial?: MaskMeta): Mask {
+  return {
+    id: partial?.id ?? fallbackId,
+    name: partial?.name ?? fallbackName,
+    mode: partial?.mode ?? "add",
+    components,
+    invert: partial?.invert ?? false,
+    feather: partial?.feather ?? 50,
+    density: partial?.density ?? 100,
+    params: partial?.params ?? {},
+  };
+}
+
 /** Create a radial local-adjustment mask with sensible defaults. */
 export function createRadialMask(
-  partial?: Partial<Omit<Mask, "components">> & {
-    id?: string;
+  partial?: MaskMeta & {
     cx?: number;
     cy?: number;
     radiusX?: number;
@@ -66,25 +86,61 @@ export function createRadialMask(
     componentFeather?: number;
   },
 ): Mask {
-  maskSeq += 1;
-  const id = partial?.id ?? `mask-${Date.now().toString(36)}-${maskSeq}`;
-  return {
+  const { name, id } = allocName("Radial");
+  return baseMask(name, id, [
+    {
+      type: "radial",
+      cx: partial?.cx ?? 0.5,
+      cy: partial?.cy ?? 0.5,
+      radiusX: partial?.radiusX ?? 0.35,
+      radiusY: partial?.radiusY ?? 0.35,
+      feather: partial?.componentFeather ?? 50,
+    },
+  ], partial);
+}
+
+/** Empty brush mask — paint strokes on the preview. */
+export function createBrushMask(partial?: MaskMeta & { strokes?: BrushStroke[] }): Mask {
+  const { name, id } = allocName("Brush");
+  return baseMask(name, id, [{ type: "brush", strokes: partial?.strokes ?? [] }], partial);
+}
+
+/** Luminance-range mask (select by brightness). */
+export function createLuminanceMask(
+  partial?: MaskMeta & { min?: number; max?: number; smooth?: number },
+): Mask {
+  const { name, id } = allocName("Luminance");
+  return baseMask(
+    name,
     id,
-    name: partial?.name ?? `Radial ${maskSeq}`,
-    mode: partial?.mode ?? "add",
-    components: [
+    [
       {
-        type: "radial",
-        cx: partial?.cx ?? 0.5,
-        cy: partial?.cy ?? 0.5,
-        radiusX: partial?.radiusX ?? 0.35,
-        radiusY: partial?.radiusY ?? 0.35,
-        feather: partial?.componentFeather ?? 50,
+        type: "luminance_range",
+        min: partial?.min ?? 0.25,
+        max: partial?.max ?? 0.75,
+        smooth: partial?.smooth ?? 0.1,
       },
     ],
-    invert: partial?.invert ?? false,
-    feather: partial?.feather ?? 50,
-    density: partial?.density ?? 100,
-    params: partial?.params ?? {},
-  };
+    partial,
+  );
+}
+
+/** Color-range mask (select by hue/chroma). Click preview to sample. */
+export function createColorRangeMask(
+  partial?: MaskMeta & { hue?: number; chroma?: number; tolerance?: number },
+): Mask {
+  const { name, id } = allocName("Color");
+  return baseMask(
+    name,
+    id,
+    [
+      {
+        type: "color_range",
+        hue: partial?.hue ?? 0.33,
+        chroma: partial?.chroma ?? 0.45,
+        tolerance: partial?.tolerance ?? 0.2,
+      },
+    ],
+    partial,
+  );
 }

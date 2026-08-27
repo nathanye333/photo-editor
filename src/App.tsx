@@ -6,10 +6,11 @@ import { photoThumbSrc } from "./catalog/media";
 import { emptyPhoto, loadPhotos, loadPresets, openCatalog, savePresetRow, upsertPhoto } from "./catalog/store";
 import { fileName, type Photo, type Preset } from "./catalog/types";
 import { fileExists, fileUrl, isTauri, pickFolder, pickSaveJpeg, scanFolder, writeFileBytes } from "./native";
-import { cloneRecipe, createRadialMask, defaultRecipe } from "./recipe/defaults";
+import { cloneRecipe, createBrushMask, createColorRangeMask, createLuminanceMask, createRadialMask, defaultRecipe } from "./recipe/defaults";
 import { pushHistory, redo, undo } from "./recipe/history";
 import { applyCatalogPatch, applyPatch } from "./recipe/patch";
-import type { CatalogPatch, EditRecipe, Flag, GlobalsPatch, Mask } from "./recipe/types";
+import type { BrushStroke, CatalogPatch, EditRecipe, Flag, GlobalsPatch, Mask } from "./recipe/types";
+import { primaryComponent } from "./recipe/types";
 import { bitmapFromBlob, PreviewRenderer, thumbnailFromBitmap, type HistogramStats, type ViewMode } from "./render/preview";
 import { createSampleBitmap } from "./render/sampleImage";
 import { loadSettings, saveSettings, type AppSettings } from "./settings";
@@ -17,6 +18,7 @@ import { AgentChat, SettingsModal, type ChatMsg } from "./ui/agentChat";
 import { HistogramView, Stars } from "./ui/controls";
 import { DevelopPanels } from "./ui/develop";
 import { Filmstrip, FolderList, LibraryGrid, MetaList } from "./ui/library";
+import type { BrushToolSettings } from "./ui/masks";
 import "./App.css";
 
 type Module = "library" | "develop";
@@ -50,6 +52,18 @@ export default function App() {
     masks: true,
   });
   const [selectedMaskId, setSelectedMaskId] = useState<string | null>(null);
+  const [brushTool, setBrushTool] = useState<BrushToolSettings>({
+    size: 20,
+    hardness: 50,
+    opacity: 100,
+    erase: false,
+  });
+  const brushToolRef = useRef(brushTool);
+  brushToolRef.current = brushTool;
+  const paintingRef = useRef(false);
+  const strokePointsRef = useRef<Array<[number, number]>>([]);
+  const selectedMaskIdRef = useRef<string | null>(null);
+  selectedMaskIdRef.current = selectedMaskId;
   const [hist, setHist] = useState<HistogramStats | null>(null);
   const [agentOpen, setAgentOpen] = useState(true);
   const [messages, setMessages] = useState<ChatMsg[]>([]);
@@ -209,12 +223,27 @@ export default function App() {
     );
   }
 
-  function addRadialMask() {
+  function addMask(mask: Mask) {
     const current = photoRef.current;
     if (!current) return;
-    const mask = createRadialMask({ params: { exposure: 0.5 } });
     setSelectedMaskId(mask.id);
     commitRecipe(applyPatch(current.recipe, { masks: { upsert: [mask] } }, "absolute"));
+  }
+
+  function addRadialMask() {
+    addMask(createRadialMask({ params: { exposure: 0.5 } }));
+  }
+
+  function addBrushMask() {
+    addMask(createBrushMask({ params: { exposure: 0.5 } }));
+  }
+
+  function addLuminanceMask() {
+    addMask(createLuminanceMask({ params: { exposure: 0.4 } }));
+  }
+
+  function addColorMask() {
+    addMask(createColorRangeMask({ params: { exposure: 0.4 } }));
   }
 
   function removeSelectedMask() {
@@ -223,6 +252,125 @@ export default function App() {
     const next = applyPatch(current.recipe, { masks: { remove: [selectedMaskId] } }, "absolute");
     setSelectedMaskId(next.masks[0]?.id ?? null);
     commitRecipe(next);
+  }
+
+  function canvasUv(e: React.PointerEvent<HTMLCanvasElement>): [number, number] | null {
+    const canvas = canvasRef.current;
+    if (!canvas) return null;
+    const rect = canvas.getBoundingClientRect();
+    if (rect.width < 1 || rect.height < 1) return null;
+    const x = (e.clientX - rect.left) / rect.width;
+    const y = (e.clientY - rect.top) / rect.height;
+    return [Math.min(1, Math.max(0, x)), Math.min(1, Math.max(0, y))];
+  }
+
+  function selectedMask(): Mask | null {
+    const current = photoRef.current;
+    if (!current) return null;
+    const id = selectedMaskIdRef.current;
+    return current.recipe.masks.find((m) => m.id === id) ?? null;
+  }
+
+  const committedStrokesRef = useRef<BrushStroke[]>([]);
+
+  function paintBrushLive() {
+    const mask = selectedMask();
+    if (!mask) return;
+    const tool = brushToolRef.current;
+    const stroke: BrushStroke = {
+      points: [...strokePointsRef.current],
+      size: tool.size,
+      hardness: tool.hardness,
+      opacity: tool.opacity,
+      erase: tool.erase,
+    };
+    liveMask({
+      ...mask,
+      components: [{ type: "brush", strokes: [...committedStrokesRef.current, stroke] }],
+    });
+  }
+
+  function finishBrushStroke() {
+    if (!strokePointsRef.current.length) return;
+    const mask = selectedMask();
+    if (!mask) return;
+    const tool = brushToolRef.current;
+    const stroke: BrushStroke = {
+      points: [...strokePointsRef.current],
+      size: tool.size,
+      hardness: tool.hardness,
+      opacity: tool.opacity,
+      erase: tool.erase,
+    };
+    committedStrokesRef.current = [...committedStrokesRef.current, stroke];
+    liveMask({
+      ...mask,
+      components: [{ type: "brush", strokes: committedStrokesRef.current }],
+    });
+    commitHistory();
+    strokePointsRef.current = [];
+  }
+
+  function onPreviewPointerDown(e: React.PointerEvent<HTMLCanvasElement>) {
+    if (mod !== "develop" || before) return;
+    const mask = selectedMask();
+    const comp = mask ? primaryComponent(mask) : null;
+    const uv = canvasUv(e);
+    if (!uv || !mask || !comp) return;
+
+    if (comp.type === "brush") {
+      e.currentTarget.setPointerCapture(e.pointerId);
+      paintingRef.current = true;
+      committedStrokesRef.current = comp.strokes;
+      strokePointsRef.current = [uv];
+      paintBrushLive();
+      return;
+    }
+
+    if (comp.type === "color_range") {
+      const sample = rendererRef.current?.sampleSource(uv[0], uv[1]);
+      if (!sample) return;
+      liveMask({
+        ...mask,
+        components: [{ ...comp, hue: sample.hue, chroma: sample.chroma }],
+      });
+      commitHistory();
+      return;
+    }
+
+    if (comp.type === "luminance_range") {
+      const sample = rendererRef.current?.sampleSource(uv[0], uv[1]);
+      if (!sample) return;
+      const half = Math.max(0.08, (comp.max - comp.min) / 2);
+      liveMask({
+        ...mask,
+        components: [
+          {
+            ...comp,
+            min: Math.max(0, sample.luma - half),
+            max: Math.min(1, sample.luma + half),
+          },
+        ],
+      });
+      commitHistory();
+    }
+  }
+
+  function onPreviewPointerMove(e: React.PointerEvent<HTMLCanvasElement>) {
+    if (!paintingRef.current) return;
+    const uv = canvasUv(e);
+    if (!uv) return;
+    const pts = strokePointsRef.current;
+    const last = pts[pts.length - 1];
+    if (last && Math.hypot(uv[0] - last[0], uv[1] - last[1]) < 0.004) return;
+    strokePointsRef.current.push(uv);
+    paintBrushLive();
+  }
+
+  function onPreviewPointerUp() {
+    if (!paintingRef.current) return;
+    paintingRef.current = false;
+    finishBrushStroke();
   }
 
   function commitHistory() {
@@ -483,8 +631,20 @@ export default function App() {
       </aside>
 
       <main className="center">
-        <div ref={hostRef} className={`preview-host${view === "1:1" ? " zoom" : ""}`}>
-          <canvas ref={canvasRef} className="preview" />
+        <div
+          ref={hostRef}
+          className={`preview-host${view === "1:1" ? " zoom" : ""}${
+            mod === "develop" && selectedMaskId ? " mask-interact" : ""
+          }`}
+        >
+          <canvas
+            ref={canvasRef}
+            className="preview"
+            onPointerDown={onPreviewPointerDown}
+            onPointerMove={onPreviewPointerMove}
+            onPointerUp={onPreviewPointerUp}
+            onPointerCancel={onPreviewPointerUp}
+          />
           {photo?.kind === "raw" ? (
             <p className="overlay">RAW files are catalogued; preview needs a native decoder.</p>
           ) : null}
@@ -512,6 +672,7 @@ export default function App() {
             solo={solo}
             open={open}
             selectedMaskId={selectedMaskId}
+            brushTool={brushTool}
             onToggle={(id, alt) => {
               if (alt) {
                 setSolo((s) => (s === id ? null : id));
@@ -523,8 +684,12 @@ export default function App() {
             onCommit={commitHistory}
             onSelectMask={setSelectedMaskId}
             onAddRadialMask={addRadialMask}
+            onAddBrushMask={addBrushMask}
+            onAddLuminanceMask={addLuminanceMask}
+            onAddColorMask={addColorMask}
             onRemoveMask={removeSelectedMask}
             onLiveMask={liveMask}
+            onBrushTool={(next) => setBrushTool((t) => ({ ...t, ...next }))}
           />
         ) : null}
       </aside>

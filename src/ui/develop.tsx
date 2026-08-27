@@ -1,20 +1,25 @@
 import { useState } from "react";
 import { HSL_CHANNELS, RANGES, type EditRecipe, type GlobalsPatch, type HslChannel, type Mask } from "../recipe/types";
 import { Panel, Slider } from "./controls";
-import { MasksPanel } from "./masks";
+import { MasksPanel, type BrushToolSettings } from "./masks";
 
 type Props = {
   recipe: EditRecipe;
   solo: string | null;
   open: Record<string, boolean>;
   selectedMaskId: string | null;
+  brushTool: BrushToolSettings;
   onToggle: (id: string, alt: boolean) => void;
   onLive: (patch: GlobalsPatch) => void;
   onCommit: () => void;
   onSelectMask: (id: string) => void;
   onAddRadialMask: () => void;
+  onAddBrushMask: () => void;
+  onAddLuminanceMask: () => void;
+  onAddColorMask: () => void;
   onRemoveMask: () => void;
   onLiveMask: (mask: Mask) => void;
+  onBrushTool: (next: Partial<BrushToolSettings>) => void;
 };
 
 export function DevelopPanels({
@@ -22,13 +27,18 @@ export function DevelopPanels({
   solo,
   open,
   selectedMaskId,
+  brushTool,
   onToggle,
   onLive,
   onCommit,
   onSelectMask,
   onAddRadialMask,
+  onAddBrushMask,
+  onAddLuminanceMask,
+  onAddColorMask,
   onRemoveMask,
   onLiveMask,
+  onBrushTool,
 }: Props) {
   const [hslCh, setHslCh] = useState<HslChannel>("orange");
   const g = recipe.globals;
@@ -129,12 +139,17 @@ export function DevelopPanels({
         selectedId={selectedMaskId}
         solo={solo}
         open={open}
+        brushTool={brushTool}
         onToggle={onToggle}
         onSelect={onSelectMask}
         onAddRadial={onAddRadialMask}
+        onAddBrush={onAddBrushMask}
+        onAddLuminance={onAddLuminanceMask}
+        onAddColor={onAddColorMask}
         onRemove={onRemoveMask}
         onLiveMask={onLiveMask}
         onCommit={onCommit}
+        onBrushTool={onBrushTool}
       />
       <Panel {...panel("optics", "Optics")}>
         {num("lensCorrection", "Lens correction", RANGES.lensCorrection, 1)}

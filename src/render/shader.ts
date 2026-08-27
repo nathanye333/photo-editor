@@ -198,30 +198,95 @@ void main() {
 }
 `;
 
-/** Mix previous composite with locally developed image using a radial weight. */
+/** Mix previous composite with locally developed image using a weight texture (R). */
 export const MIX_FRAG = `#version 300 es
 precision highp float;
 in vec2 vUv;
 out vec4 fragColor;
 uniform sampler2D uPrev;
 uniform sampler2D uLocal;
-uniform float uCx;
-uniform float uCy;
-uniform float uRadiusX;
-uniform float uRadiusY;
-uniform float uFeather;
+uniform sampler2D uWeight;
 uniform float uDensity;
 uniform float uInvert;
 void main() {
   vec3 prev = texture(uPrev, vUv).rgb;
   vec3 local = texture(uLocal, vUv).rgb;
+  float w = texture(uWeight, vUv).r;
+  if (uInvert > 0.5) w = 1.0 - w;
+  w *= clamp(uDensity / 100.0, 0.0, 1.0);
+  fragColor = vec4(mix(prev, local, w), 1.0);
+}
+`;
+
+export const WEIGHT_RADIAL_FRAG = `#version 300 es
+precision highp float;
+in vec2 vUv;
+out vec4 fragColor;
+uniform float uCx;
+uniform float uCy;
+uniform float uRadiusX;
+uniform float uRadiusY;
+uniform float uFeather;
+void main() {
   vec2 d = (vUv - vec2(uCx, uCy)) / max(vec2(uRadiusX, uRadiusY), vec2(1e-4));
   float dist = length(d);
   float feather = clamp(uFeather / 100.0, 0.001, 1.0);
   float inner = 1.0 - feather;
   float w = 1.0 - smoothstep(inner, 1.0, dist);
-  if (uInvert > 0.5) w = 1.0 - w;
-  w *= clamp(uDensity / 100.0, 0.0, 1.0);
-  fragColor = vec4(mix(prev, local, w), 1.0);
+  fragColor = vec4(w, w, w, 1.0);
+}
+`;
+
+export const WEIGHT_LUMA_FRAG = `#version 300 es
+precision highp float;
+in vec2 vUv;
+out vec4 fragColor;
+uniform sampler2D uImage;
+uniform float uMin;
+uniform float uMax;
+uniform float uSmooth;
+void main() {
+  vec3 rgb = texture(uImage, vUv).rgb;
+  float Y = dot(rgb, vec3(0.2126, 0.7152, 0.0722));
+  float s = max(uSmooth, 0.001);
+  float lo = smoothstep(uMin - s, uMin + s, Y);
+  float hi = 1.0 - smoothstep(uMax - s, uMax + s, Y);
+  float w = clamp(lo * hi, 0.0, 1.0);
+  fragColor = vec4(w, w, w, 1.0);
+}
+`;
+
+export const WEIGHT_COLOR_FRAG = `#version 300 es
+precision highp float;
+in vec2 vUv;
+out vec4 fragColor;
+uniform sampler2D uImage;
+uniform float uHue;
+uniform float uChroma;
+uniform float uTolerance;
+vec3 rgb2hsl(vec3 color) {
+  float maxc = max(max(color.r, color.g), color.b);
+  float minc = min(min(color.r, color.g), color.b);
+  float l = (maxc + minc) * 0.5;
+  float d = maxc - minc;
+  if (d < 1e-5) return vec3(0.0, 0.0, l);
+  float s = l > 0.5 ? d / (2.0 - maxc - minc) : d / (maxc + minc);
+  float h = 0.0;
+  if (maxc == color.r) h = mod((color.g - color.b) / d + (color.g < color.b ? 6.0 : 0.0), 6.0);
+  else if (maxc == color.g) h = (color.b - color.r) / d + 2.0;
+  else h = (color.r - color.g) / d + 4.0;
+  h /= 6.0;
+  return vec3(h, s, l);
+}
+void main() {
+  vec3 hsl = rgb2hsl(texture(uImage, vUv).rgb);
+  float dh = abs(hsl.x - uHue);
+  dh = min(dh, 1.0 - dh);
+  float dc = abs(hsl.y - uChroma);
+  float tol = max(uTolerance, 0.001);
+  float wh = 1.0 - smoothstep(tol * 0.35, tol, dh);
+  float wc = 1.0 - smoothstep(tol * 0.75, tol * 1.5, dc);
+  float w = clamp(wh * wc, 0.0, 1.0);
+  fragColor = vec4(w, w, w, 1.0);
 }
 `;

@@ -3,6 +3,7 @@ import {
   HSL_CHANNELS,
   MAX_MASKS,
   RANGES,
+  type BrushStroke,
   type CatalogPatch,
   type DevelopPatch,
   type EditRecipe,
@@ -205,7 +206,28 @@ function normalizeComponent(c: MaskComponent): MaskComponent {
       model: typeof c.model === "string" ? c.model : "default",
     };
   }
-  return { type: "brush", strokes: Array.isArray(c.strokes) ? c.strokes : [] };
+  const strokes = Array.isArray(c.strokes)
+    ? c.strokes
+        .map((s) => {
+          if (!s || typeof s !== "object") return null;
+          const stroke = s as Partial<BrushStroke>;
+          const points = Array.isArray(stroke.points)
+            ? stroke.points
+                .filter((p): p is [number, number] => Array.isArray(p) && p.length >= 2)
+                .map(([x, y]) => [clamp(num(x, 0), RANGES.maskCoord), clamp(num(y, 0), RANGES.maskCoord)] as [number, number])
+            : [];
+          if (!points.length) return null;
+          return {
+            points,
+            size: clamp(num(stroke.size, 20), RANGES.brushSize),
+            hardness: clamp(num(stroke.hardness, 50), RANGES.brushHardness),
+            opacity: clamp(num(stroke.opacity, 100), RANGES.brushOpacity),
+            erase: Boolean(stroke.erase),
+          };
+        })
+        .filter((s): s is BrushStroke => s !== null)
+    : [];
+  return { type: "brush", strokes };
 }
 
 function normalizeMode(mode: unknown): MaskMode {

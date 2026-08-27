@@ -54,7 +54,16 @@ export type Globals = {
 
 export type MaskMode = "add" | "subtract" | "intersect";
 
-/** Local adjustments. v1.5 renders radial masks; other component types are stored but not drawn yet. */
+/** Brush stroke in normalized image UVs (origin top-left). size = % of shorter edge. */
+export type BrushStroke = {
+  points: Array<[number, number]>;
+  size: number;
+  hardness: number;
+  opacity: number;
+  erase: boolean;
+};
+
+/** Local adjustments. Radial, brush, luminance range, and color range are rendered. */
 export type MaskComponent =
   | { type: "semantic"; label: string; model: string }
   | {
@@ -73,7 +82,7 @@ export type MaskComponent =
     }
   | { type: "luminance_range"; min: number; max: number; smooth: number }
   | { type: "color_range"; hue: number; chroma: number; tolerance: number }
-  | { type: "brush"; strokes: unknown[] };
+  | { type: "brush"; strokes: BrushStroke[] };
 
 export type Mask = {
   id: string;
@@ -157,4 +166,23 @@ export const RANGES = {
   maskDensity: [0, 100],
   maskCoord: [0, 1],
   maskRadius: [0.01, 1],
+  brushSize: [1, 100],
+  brushHardness: [0, 100],
+  brushOpacity: [1, 100],
+  rangeUnit: [0, 1],
 } as const;
+
+export function primaryComponent(mask: Mask): MaskComponent | null {
+  return mask.components[0] ?? null;
+}
+
+export function maskKindLabel(mask: Mask): string {
+  const c = primaryComponent(mask);
+  if (!c) return "Mask";
+  if (c.type === "brush") return "Brush";
+  if (c.type === "luminance_range") return "Luminance";
+  if (c.type === "color_range") return "Color";
+  if (c.type === "radial") return "Radial";
+  if (c.type === "linear") return "Linear";
+  return "Mask";
+}

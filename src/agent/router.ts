@@ -34,6 +34,8 @@ const KEYWORDS: Record<ToolCategory, string[]> = {
   masks: [
     "mask",
     "radial",
+    "brush",
+    "paint",
     "local",
     "dodge",
     "burn",
@@ -42,6 +44,10 @@ const KEYWORDS: Record<ToolCategory, string[]> = {
     "vignette",
     "region",
     "area",
+    "luminance",
+    "luma",
+    "color range",
+    "select",
   ],
 };
 
@@ -53,7 +59,7 @@ export const CATEGORY_DOCS: Record<ToolCategory, string> = {
   catalog: "Catalog: apply_catalog_patch with rating 0-5 and flag pick|reject|unflagged.",
   presets: "Presets: apply_preset by name, reset_recipe, copy_settings.",
   masks:
-    "Masks: upsert_mask for radial local adjustments (cx,cy,radiusX,radiusY 0–1; params.exposure etc). remove_mask by id. Prefer masks for localized brighten/darken.",
+    "Masks: upsert_brush_mask (paint stamps), upsert_color_mask (hue/chroma), upsert_luminance_mask (brightness range), upsert_mask (radial), remove_mask. Prefer brush/color/luma for selecting areas.",
 };
 
 export function routeCategories(instruction: string): ToolCategory[] {

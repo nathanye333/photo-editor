@@ -1,7 +1,12 @@
 import { tool } from "ai";
 import { z } from "zod";
-import { createRadialMask } from "../recipe/defaults";
-import type { CatalogPatch, DevelopPatch, EditRecipe, Flag, Mask } from "../recipe/types";
+import {
+  createBrushMask,
+  createColorRangeMask,
+  createLuminanceMask,
+  createRadialMask,
+} from "../recipe/defaults";
+import { primaryComponent, type CatalogPatch, type DevelopPatch, type EditRecipe, type Flag, type Mask } from "../recipe/types";
 
 const hslChannel = z.object({
   hue: z.number().optional(),
@@ -39,11 +44,11 @@ function summarizeMasks(masks: Mask[]) {
   return masks.map((m) => ({
     id: m.id,
     name: m.name,
+    kind: primaryComponent(m)?.type ?? "unknown",
     invert: m.invert,
     density: m.density,
-    feather: m.feather,
     params: m.params,
-    radial: m.components.find((c) => c.type === "radial") ?? null,
+    component: primaryComponent(m),
   }));
 }
 
@@ -60,7 +65,7 @@ export function createAgentTools(actions: AgentActions) {
   return {
     apply_develop_patch: tool({
       description:
-        "Apply relative deltas to global develop params (already stored as absolute values). Prefer small iterative deltas. Do not send pixels. For local adjustments use upsert_mask / remove_mask.",
+        "Apply relative deltas to global develop params (already stored as absolute values). Prefer small iterative deltas. Do not send pixels. For local adjustments use upsert_mask / upsert_luminance_mask / upsert_color_mask / upsert_brush_mask / remove_mask.",
       inputSchema: z.object({
         exposure: z.number().optional().describe("EV delta, typically ±0.1 to ±1"),
         contrast: z.number().optional(),
@@ -93,9 +98,9 @@ export function createAgentTools(actions: AgentActions) {
     }),
     upsert_mask: tool({
       description:
-        "Create or update a radial local-adjustment mask. Coordinates are normalized 0–1 (origin top-left). Params override globals inside the mask. Pass id to update an existing mask.",
+        "Create or update a radial (oval falloff) local-adjustment mask. Prefer upsert_brush_mask / upsert_color_mask / upsert_luminance_mask for paint or select-by-color/brightness.",
       inputSchema: z.object({
-        id: z.string().optional().describe("Existing mask id to update; omit to create"),
+        id: z.string().optional(),
         name: z.string().optional(),
         cx: z.number().min(0).max(1).optional(),
         cy: z.number().min(0).max(1).optional(),
@@ -119,6 +124,113 @@ export function createAgentTools(actions: AgentActions) {
           radiusX: input.radiusX ?? (prevRadial?.type === "radial" ? prevRadial.radiusX : undefined),
           radiusY: input.radiusY ?? (prevRadial?.type === "radial" ? prevRadial.radiusY : undefined),
           feather: input.feather ?? current?.feather,
+          density: input.density ?? current?.density,
+          invert: input.invert ?? current?.invert,
+          params: { ...(current?.params ?? {}), ...(input.params ?? {}) },
+        });
+        const recipe = actions.patchDevelop({ masks: { upsert: [mask] } });
+        return { ok: true, maskId: mask.id, masks: summarizeMasks(recipe.masks) };
+      },
+    }),
+    upsert_brush_mask: tool({
+      description:
+        "Create or update a brush mask. Optional stamp points (normalized 0–1 UV, origin top-left) paint coverage; users can refine by painting in the UI.",
+      inputSchema: z.object({
+        id: z.string().optional(),
+        name: z.string().optional(),
+        density: z.number().min(0).max(100).optional(),
+        invert: z.boolean().optional(),
+        params: maskParamsSchema.optional(),
+        stamps: z
+          .array(
+            z.object({
+              x: z.number().min(0).max(1),
+              y: z.number().min(0).max(1),
+              size: z.number().min(1).max(100).optional(),
+            }),
+          )
+          .optional(),
+      }),
+      execute: async (input) => {
+        const current = input.id
+          ? actions.getRecipe().masks.find((m) => m.id === input.id)
+          : undefined;
+        const prev = current?.components.find((c) => c.type === "brush");
+        const stamps = (input.stamps ?? []).map((s) => ({
+          points: [[s.x, s.y] as [number, number]],
+          size: s.size ?? 25,
+          hardness: 60,
+          opacity: 100,
+          erase: false,
+        }));
+        const mask = createBrushMask({
+          id: input.id ?? current?.id,
+          name: input.name ?? current?.name,
+          density: input.density ?? current?.density,
+          invert: input.invert ?? current?.invert,
+          params: { ...(current?.params ?? {}), ...(input.params ?? {}) },
+          strokes: stamps.length ? stamps : prev?.type === "brush" ? prev.strokes : [],
+        });
+        const recipe = actions.patchDevelop({ masks: { upsert: [mask] } });
+        return { ok: true, maskId: mask.id, masks: summarizeMasks(recipe.masks) };
+      },
+    }),
+    upsert_luminance_mask: tool({
+      description:
+        "Create or update a luminance-range mask (select by brightness). min/max/smooth are 0–1.",
+      inputSchema: z.object({
+        id: z.string().optional(),
+        name: z.string().optional(),
+        min: z.number().min(0).max(1).optional(),
+        max: z.number().min(0).max(1).optional(),
+        smooth: z.number().min(0).max(1).optional(),
+        density: z.number().min(0).max(100).optional(),
+        invert: z.boolean().optional(),
+        params: maskParamsSchema.optional(),
+      }),
+      execute: async (input) => {
+        const current = input.id
+          ? actions.getRecipe().masks.find((m) => m.id === input.id)
+          : undefined;
+        const prev = current?.components.find((c) => c.type === "luminance_range");
+        const mask = createLuminanceMask({
+          id: input.id ?? current?.id,
+          name: input.name ?? current?.name,
+          min: input.min ?? (prev?.type === "luminance_range" ? prev.min : undefined),
+          max: input.max ?? (prev?.type === "luminance_range" ? prev.max : undefined),
+          smooth: input.smooth ?? (prev?.type === "luminance_range" ? prev.smooth : undefined),
+          density: input.density ?? current?.density,
+          invert: input.invert ?? current?.invert,
+          params: { ...(current?.params ?? {}), ...(input.params ?? {}) },
+        });
+        const recipe = actions.patchDevelop({ masks: { upsert: [mask] } });
+        return { ok: true, maskId: mask.id, masks: summarizeMasks(recipe.masks) };
+      },
+    }),
+    upsert_color_mask: tool({
+      description:
+        "Create or update a color-range mask (select by hue/chroma). hue/chroma/tolerance are 0–1.",
+      inputSchema: z.object({
+        id: z.string().optional(),
+        name: z.string().optional(),
+        hue: z.number().min(0).max(1).optional(),
+        chroma: z.number().min(0).max(1).optional(),
+        tolerance: z.number().min(0).max(1).optional(),
+        density: z.number().min(0).max(100).optional(),
+        invert: z.boolean().optional(),
+        params: maskParamsSchema.optional(),
+      }),
+      execute: async (input) => {
+        const current = input.id
+          ? actions.getRecipe().masks.find((m) => m.id === input.id)
+          : undefined;
+        const prev = current?.components.find((c) => c.type === "color_range");
+        const mask = createColorRangeMask({
+          id: input.id ?? current?.id,
+          name: input.name ?? current?.name,
+          hue: input.hue ?? (prev?.type === "color_range" ? prev.hue : undefined),
+          chroma: input.chroma ?? (prev?.type === "color_range" ? prev.chroma : undefined),
+          tolerance: input.tolerance ?? (prev?.type === "color_range" ? prev.tolerance : undefined),
           density: input.density ?? current?.density,
           invert: input.invert ?? current?.invert,
           params: { ...(current?.params ?? {}), ...(input.params ?? {}) },
