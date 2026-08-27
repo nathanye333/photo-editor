@@ -1,6 +1,6 @@
 import type { BrushStroke } from "../recipe/types";
 
-/** Rasterize brush strokes to an opaque weight map (R channel = coverage). Origin top-left. */
+/** Rasterize brush strokes to an ImageData weight map (R = coverage). Origin top-left. */
 export function rasterizeBrushStrokes(strokes: BrushStroke[], w: number, h: number): ImageData {
   const canvas = document.createElement("canvas");
   canvas.width = Math.max(1, w);
@@ -23,8 +23,7 @@ export function rasterizeBrushStrokes(strokes: BrushStroke[], w: number, h: numb
       const py = y * canvas.height;
       const soft = Math.max(0.001, 1 - hardness);
       const grad = ctx.createRadialGradient(px, py, radius * (1 - soft), px, py, radius);
-      const a = stroke.erase ? opacity : opacity;
-      grad.addColorStop(0, `rgba(255,255,255,${a})`);
+      grad.addColorStop(0, `rgba(255,255,255,${opacity})`);
       grad.addColorStop(1, "rgba(255,255,255,0)");
       ctx.fillStyle = grad;
       ctx.beginPath();
@@ -53,6 +52,19 @@ export function rasterizeBrushStrokes(strokes: BrushStroke[], w: number, h: numb
   }
 
   return ctx.getImageData(0, 0, canvas.width, canvas.height);
+}
+
+/** Flip rows so TypedArray uploads match textures that used UNPACK_FLIP_Y_WEBGL. */
+export function flipImageDataY(src: ImageData): ImageData {
+  const { width, height, data } = src;
+  const out = new ImageData(width, height);
+  const row = width * 4;
+  for (let y = 0; y < height; y++) {
+    const srcOff = y * row;
+    const dstOff = (height - 1 - y) * row;
+    out.data.set(data.subarray(srcOff, srcOff + row), dstOff);
+  }
+  return out;
 }
 
 export function rgbToHueChroma(r: number, g: number, b: number): { hue: number; chroma: number; luma: number } {

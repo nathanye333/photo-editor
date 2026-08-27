@@ -64,6 +64,7 @@ export default function App() {
   const strokePointsRef = useRef<Array<[number, number]>>([]);
   const selectedMaskIdRef = useRef<string | null>(null);
   selectedMaskIdRef.current = selectedMaskId;
+  const [brushCursor, setBrushCursor] = useState<{ x: number; y: number; d: number } | null>(null);
   const [hist, setHist] = useState<HistogramStats | null>(null);
   const [agentOpen, setAgentOpen] = useState(true);
   const [messages, setMessages] = useState<ChatMsg[]>([]);
@@ -264,6 +265,27 @@ export default function App() {
     return [Math.min(1, Math.max(0, x)), Math.min(1, Math.max(0, y))];
   }
 
+  function updateBrushCursor(e: React.PointerEvent<HTMLCanvasElement>) {
+    const mask = selectedMask();
+    const comp = mask ? primaryComponent(mask) : null;
+    if (mod !== "develop" || comp?.type !== "brush") {
+      setBrushCursor(null);
+      return;
+    }
+    const canvas = canvasRef.current;
+    const host = hostRef.current;
+    if (!canvas || !host) return;
+    const canvasRect = canvas.getBoundingClientRect();
+    const hostRect = host.getBoundingClientRect();
+    const minEdge = Math.min(canvasRect.width, canvasRect.height);
+    const d = Math.max(4, (brushToolRef.current.size / 100) * minEdge);
+    setBrushCursor({
+      x: e.clientX - hostRect.left,
+      y: e.clientY - hostRect.top,
+      d,
+    });
+  }
+
   function selectedMask(): Mask | null {
     const current = photoRef.current;
     if (!current) return null;
@@ -284,10 +306,16 @@ export default function App() {
       opacity: tool.opacity,
       erase: tool.erase,
     };
-    liveMask({
+    const next: Mask = {
       ...mask,
       components: [{ type: "brush", strokes: [...committedStrokesRef.current, stroke] }],
-    });
+    };
+    const current = photoRef.current;
+    if (!current) return;
+    const recipe = applyPatch(current.recipe, { masks: { upsert: [next] } }, "absolute");
+    // Update WebGL immediately so the brush tracks the cursor; defer React state to pointer-up.
+    photoRef.current = { ...current, recipe };
+    rendererRef.current?.setRecipe(recipe);
   }
 
   function finishBrushStroke() {
@@ -303,10 +331,11 @@ export default function App() {
       erase: tool.erase,
     };
     committedStrokesRef.current = [...committedStrokesRef.current, stroke];
-    liveMask({
+    const next: Mask = {
       ...mask,
       components: [{ type: "brush", strokes: committedStrokesRef.current }],
-    });
+    };
+    liveMask(next);
     commitHistory();
     strokePointsRef.current = [];
   }
@@ -316,9 +345,11 @@ export default function App() {
     const mask = selectedMask();
     const comp = mask ? primaryComponent(mask) : null;
     const uv = canvasUv(e);
+    updateBrushCursor(e);
     if (!uv || !mask || !comp) return;
 
     if (comp.type === "brush") {
+      e.preventDefault();
       e.currentTarget.setPointerCapture(e.pointerId);
       paintingRef.current = true;
       committedStrokesRef.current = comp.strokes;
@@ -357,12 +388,13 @@ export default function App() {
   }
 
   function onPreviewPointerMove(e: React.PointerEvent<HTMLCanvasElement>) {
+    updateBrushCursor(e);
     if (!paintingRef.current) return;
     const uv = canvasUv(e);
     if (!uv) return;
     const pts = strokePointsRef.current;
     const last = pts[pts.length - 1];
-    if (last && Math.hypot(uv[0] - last[0], uv[1] - last[1]) < 0.004) return;
+    if (last && Math.hypot(uv[0] - last[0], uv[1] - last[1]) < 0.003) return;
     strokePointsRef.current.push(uv);
     paintBrushLive();
   }
@@ -371,6 +403,10 @@ export default function App() {
     if (!paintingRef.current) return;
     paintingRef.current = false;
     finishBrushStroke();
+  }
+
+  function onPreviewPointerLeave() {
+    if (!paintingRef.current) setBrushCursor(null);
   }
 
   function commitHistory() {
@@ -555,6 +591,10 @@ export default function App() {
     saveSettings(next);
   }
 
+  const selectedMaskComp = photo
+    ? primaryComponent(photo.recipe.masks.find((m) => m.id === selectedMaskId) ?? { id: "", name: "", mode: "add", components: [], invert: false, feather: 50, density: 100, params: {} })
+    : null;
+  const brushToolActive = mod === "develop" && selectedMaskComp?.type === "brush";
   const navSrc = photo ? photoThumbSrc(photo) : undefined;
 
   return (
@@ -635,7 +675,7 @@ export default function App() {
           ref={hostRef}
           className={`preview-host${view === "1:1" ? " zoom" : ""}${
             mod === "develop" && selectedMaskId ? " mask-interact" : ""
-          }`}
+          }${brushToolActive ? " brush-tool" : ""}`}
         >
           <canvas
             ref={canvasRef}
@@ -644,7 +684,19 @@ export default function App() {
             onPointerMove={onPreviewPointerMove}
             onPointerUp={onPreviewPointerUp}
             onPointerCancel={onPreviewPointerUp}
+            onPointerEnter={updateBrushCursor}
+            onPointerLeave={onPreviewPointerLeave}
           />
+          {brushCursor ? (
+            <div
+              className={`brush-cursor${brushTool.erase ? " erase" : ""}`}
+              style={{
+                width: brushCursor.d,
+                height: brushCursor.d,
+                transform: `translate(${brushCursor.x - brushCursor.d / 2}px, ${brushCursor.y - brushCursor.d / 2}px)`,
+              }}
+            />
+          ) : null}
           {photo?.kind === "raw" ? (
             <p className="overlay">RAW files are catalogued; preview needs a native decoder.</p>
           ) : null}

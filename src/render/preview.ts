@@ -197,7 +197,8 @@ export class PreviewRenderer {
     }
     const gl = this.gl;
     gl.bindTexture(gl.TEXTURE_2D, this.texture);
-    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, 1);
+    // UVs use top-left origin (v=0 at top of screen). Do not flip uploads.
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, 0);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
 
     const c = document.createElement("canvas");
@@ -373,9 +374,11 @@ export class PreviewRenderer {
     }
 
     if (component.type === "brush") {
+      // TypedArray uploads ignore UNPACK_FLIP_Y. Keep ImageData top-left origin so
+      // strokes align with pointer UVs (and sampleSource) without an extra flip.
       const data = rasterizeBrushStrokes(component.strokes, w, h);
       gl.bindTexture(gl.TEXTURE_2D, this.brushTex);
-      gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, 1);
+      gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, 0);
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, data.data);
       gl.useProgram(this.blitProgram);
       gl.activeTexture(gl.TEXTURE0);
