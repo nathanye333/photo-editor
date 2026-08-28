@@ -50,7 +50,7 @@ Core develop globals, minimal library, and the agent.
 
 - [~] Color Grading panel — stub in UI
 - [~] Optics — `lensCorrection` on recipe, unused in renderer, no profile library
-- [~] Geometry — rotate slider only; no crop or perspective
+- [~] Geometry — crop, straighten, aspect presets shipped in v1.6; perspective deferred
 - [x] Masks — radial MVP shipped in v1.5; other mask types still deferred
 
 ---
@@ -82,22 +82,22 @@ Unlock serious workflows: editable RAW and basic framing.
 
 ### RAW
 
-- [ ] Native RAW decode (LibRaw, rawloader, or platform decoder)
-- [ ] RAW preview in Library grid and Develop
-- [ ] RAW-aware thumbnail generation
+- [x] Native RAW decode (ffmpeg via Tauri desktop)
+- [x] RAW preview in Library grid and Develop
+- [x] RAW-aware thumbnail generation
 - [ ] White balance from RAW metadata as starting point
 
 ### Crop & transform
 
-- [ ] Interactive crop tool with handles
-- [ ] Aspect ratio presets (original, 1:1, 4:5, 16:9, custom)
-- [ ] Straighten overlay (drag to rotate)
+- [x] Interactive crop tool with handles
+- [x] Aspect ratio presets (original, 1:1, 4:5, 16:9, custom)
+- [x] Straighten overlay (drag handle + slider)
 - [ ] Upright / auto perspective correction
 - [ ] Guided upright (draw lines)
 - [ ] Manual vertical / horizontal / rotate / aspect / scale transforms
-- [ ] Crop stored on recipe and applied in renderer + export
+- [x] Crop stored on recipe and applied in renderer + export
 
-**Exit criteria:** Open a CR3 or NEF, crop to 4:5, straighten, export JPEG with crop applied.
+**Exit criteria:** Open a CR3 or NEF, crop to 4:5, straighten, export JPEG with crop applied. **Met** (desktop/Tauri; requires ffmpeg).
 
 ---
 
@@ -262,7 +262,7 @@ Features where Field intentionally diverges from Lightroom:
 ```
 v1    ✅  Globals, library basics, agent, JPEG export
 v1.5  ~   Masks (brush, color, luma, radial shipped; linear/semantic next)
-v1.6  →   RAW decode + crop / transform
+v1.6  ✅  RAW decode + crop / transform
 v1.7  →   Color grading, lens profiles, full detail, point curve
 v2.0  →   Collections, keywords, culling views, virtual copies
 v2.x  →   XMP sidecars, batch export, export presets

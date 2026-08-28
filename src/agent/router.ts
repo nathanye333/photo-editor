@@ -1,4 +1,4 @@
-export type ToolCategory = "tone" | "color" | "detail" | "catalog" | "presets" | "masks";
+export type ToolCategory = "tone" | "color" | "detail" | "catalog" | "presets" | "masks" | "geometry";
 
 const KEYWORDS: Record<ToolCategory, string[]> = {
   tone: [
@@ -49,6 +49,7 @@ const KEYWORDS: Record<ToolCategory, string[]> = {
     "color range",
     "select",
   ],
+  geometry: ["crop", "straighten", "rotate", "aspect", "4:5", "16:9", "square", "frame", "composition"],
 };
 
 export const CATEGORY_DOCS: Record<ToolCategory, string> = {
@@ -60,6 +61,8 @@ export const CATEGORY_DOCS: Record<ToolCategory, string> = {
   presets: "Presets: apply_preset by name, reset_recipe, copy_settings.",
   masks:
     "Masks: upsert_brush_mask (paint stamps), upsert_color_mask (hue/chroma), upsert_luminance_mask (brightness range), upsert_mask (radial), remove_mask. Prefer brush/color/luma for selecting areas.",
+  geometry:
+    "Geometry: apply_crop_patch with enabled, normalized x/y/width/height, angle (-45..45), aspect original|1:1|4:5|16:9|custom.",
 };
 
 export function routeCategories(instruction: string): ToolCategory[] {

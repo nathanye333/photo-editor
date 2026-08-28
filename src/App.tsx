@@ -1,21 +1,23 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { runAgentTurn } from "./agent/run";
 import type { AgentActions } from "./agent/tools";
-import { photosFromFileList, photosFromScanned } from "./catalog/import";
+import { photosFromFileList, photosFromScanned, loadRawPreview } from "./catalog/import";
 import { photoThumbSrc } from "./catalog/media";
 import { emptyPhoto, loadPhotos, loadPresets, openCatalog, savePresetRow, upsertPhoto } from "./catalog/store";
 import { fileName, type Photo, type Preset } from "./catalog/types";
 import { fileExists, fileUrl, isTauri, pickFolder, pickSaveJpeg, scanFolder, writeFileBytes } from "./native";
+import { applyAspectPreset } from "./recipe/crop";
 import { cloneRecipe, createBrushMask, createColorRangeMask, createLuminanceMask, createRadialMask, defaultRecipe } from "./recipe/defaults";
 import { pushHistory, redo, undo } from "./recipe/history";
 import { applyCatalogPatch, applyPatch } from "./recipe/patch";
-import type { BrushStroke, CatalogPatch, EditRecipe, Flag, GlobalsPatch, Mask } from "./recipe/types";
+import type { BrushStroke, CatalogPatch, CropAspect, CropPatch, EditRecipe, Flag, GlobalsPatch, Mask } from "./recipe/types";
 import { primaryComponent } from "./recipe/types";
 import { bitmapFromBlob, PreviewRenderer, thumbnailFromBitmap, type HistogramStats, type ViewMode } from "./render/preview";
 import { createSampleBitmap } from "./render/sampleImage";
 import { loadSettings, saveSettings, type AppSettings } from "./settings";
 import { AgentChat, SettingsModal, type ChatMsg } from "./ui/agentChat";
 import { HistogramView, Stars } from "./ui/controls";
+import { CropOverlay } from "./ui/crop";
 import { DevelopPanels } from "./ui/develop";
 import { Filmstrip, FolderList, LibraryGrid, MetaList } from "./ui/library";
 import type { BrushToolSettings } from "./ui/masks";
@@ -64,6 +66,8 @@ export default function App() {
   const strokePointsRef = useRef<Array<[number, number]>>([]);
   const selectedMaskIdRef = useRef<string | null>(null);
   selectedMaskIdRef.current = selectedMaskId;
+  const [cropToolActive, setCropToolActive] = useState(false);
+  const [previewSize, setPreviewSize] = useState({ w: 0, h: 0 });
   const [brushCursor, setBrushCursor] = useState<{ x: number; y: number; d: number } | null>(null);
   const [hist, setHist] = useState<HistogramStats | null>(null);
   const [agentOpen, setAgentOpen] = useState(true);
@@ -130,11 +134,16 @@ export default function App() {
   }, [before]);
 
   useEffect(() => {
-    rendererRef.current?.setRecipe(photo?.recipe ?? defaultRecipe());
-  }, [photo?.recipe]);
+    const recipe = photo?.recipe ?? defaultRecipe();
+    const displayRecipe = cropToolActive
+      ? { ...recipe, crop: { ...recipe.crop, enabled: false } }
+      : recipe;
+    rendererRef.current?.setRecipe(displayRecipe);
+  }, [photo?.recipe, cropToolActive]);
 
   useEffect(() => {
     setSelectedMaskId(photo?.recipe.masks[0]?.id ?? null);
+    setCropToolActive(false);
   }, [photo?.id]);
 
   useEffect(() => {
@@ -142,7 +151,7 @@ export default function App() {
     if (!renderer) return;
     let cancelled = false;
     (async () => {
-      if (!photo || photo.missing || photo.kind === "raw") {
+      if (!photo || photo.missing) {
         renderer.setImage(null);
         return;
       }
@@ -171,6 +180,15 @@ export default function App() {
           if (!cancelled) renderer.setImage(bmp);
           return;
         }
+        if (photo.kind === "raw" && isTauri()) {
+          const raw = await loadRawPreview(photo.path);
+          if (cancelled) {
+            raw.bitmap.close();
+            return;
+          }
+          renderer.setImage(raw.bitmap);
+          return;
+        }
         if (isTauri()) {
           const blob = await fetch(fileUrl(photo.path)).then((r) => r.blob());
           const bmp = await bitmapFromBlob(blob);
@@ -188,8 +206,10 @@ export default function App() {
   const layoutPreview = useCallback(() => {
     const host = hostRef.current;
     const renderer = rendererRef.current;
+    const canvas = canvasRef.current;
     if (!host || !renderer) return;
     renderer.layout(view, host.clientWidth, host.clientHeight);
+    if (canvas) setPreviewSize({ w: canvas.width, h: canvas.height });
   }, [view]);
 
   useEffect(() => {
@@ -199,7 +219,25 @@ export default function App() {
     const ro = new ResizeObserver(layoutPreview);
     ro.observe(host);
     return () => ro.disconnect();
-  }, [layoutPreview, photo?.id]);
+  }, [layoutPreview, photo?.id, photo?.recipe.crop, cropToolActive]);
+
+  function liveCrop(patch: CropPatch) {
+    const current = photoRef.current;
+    if (!current) return;
+    const next = applyPatch(current.recipe, { crop: patch }, "absolute");
+    if (patch.angle !== undefined) {
+      next.globals = { ...next.globals, cropAngle: next.crop.angle };
+    }
+    replacePhoto({ ...current, recipe: next }, false);
+  }
+
+  function onCropAspect(aspect: CropAspect) {
+    const current = photoRef.current;
+    if (!current?.width || !current.height) return;
+    const crop = applyAspectPreset(current.recipe.crop, aspect, current.width, current.height);
+    commitRecipe(applyPatch(current.recipe, { crop }, "absolute"));
+    setCropToolActive(true);
+  }
 
   function replacePhoto(next: Photo, persist = true) {
     photoRef.current = next;
@@ -644,7 +682,7 @@ export default function App() {
 
       <aside className="left">
         <h3>Navigator</h3>
-        {navSrc && photo?.kind !== "raw" && !photo?.missing ? (
+        {navSrc && !photo?.missing ? (
           <img className="nav-img" src={navSrc} alt="" />
         ) : (
           <p className="stub">No preview</p>
@@ -675,18 +713,29 @@ export default function App() {
           ref={hostRef}
           className={`preview-host${view === "1:1" ? " zoom" : ""}${
             mod === "develop" && selectedMaskId ? " mask-interact" : ""
-          }${brushToolActive ? " brush-tool" : ""}`}
+          }${brushToolActive ? " brush-tool" : ""}${cropToolActive ? " crop-tool" : ""}`}
         >
-          <canvas
-            ref={canvasRef}
-            className="preview"
-            onPointerDown={onPreviewPointerDown}
-            onPointerMove={onPreviewPointerMove}
-            onPointerUp={onPreviewPointerUp}
-            onPointerCancel={onPreviewPointerUp}
-            onPointerEnter={updateBrushCursor}
-            onPointerLeave={onPreviewPointerLeave}
-          />
+          <div className="preview-stage">
+            <canvas
+              ref={canvasRef}
+              className="preview"
+              onPointerDown={onPreviewPointerDown}
+              onPointerMove={onPreviewPointerMove}
+              onPointerUp={onPreviewPointerUp}
+              onPointerCancel={onPreviewPointerUp}
+              onPointerEnter={updateBrushCursor}
+              onPointerLeave={onPreviewPointerLeave}
+            />
+            {cropToolActive && previewSize.w > 0 && photo ? (
+              <CropOverlay
+                crop={photo.recipe.crop}
+                width={previewSize.w}
+                height={previewSize.h}
+                onLive={liveCrop}
+                onCommit={commitHistory}
+              />
+            ) : null}
+          </div>
           {brushCursor ? (
             <div
               className={`brush-cursor${brushTool.erase ? " erase" : ""}`}
@@ -697,10 +746,10 @@ export default function App() {
               }}
             />
           ) : null}
-          {photo?.kind === "raw" ? (
-            <p className="overlay">RAW files are catalogued; preview needs a native decoder.</p>
-          ) : null}
           {photo?.missing ? <p className="overlay">File missing on disk.</p> : null}
+          {photo?.kind === "raw" && !isTauri() ? (
+            <p className="overlay">RAW preview requires the Field desktop app.</p>
+          ) : null}
         </div>
         {mod === "library" ? (
           <LibraryGrid
@@ -725,6 +774,7 @@ export default function App() {
             open={open}
             selectedMaskId={selectedMaskId}
             brushTool={brushTool}
+            cropToolActive={cropToolActive}
             onToggle={(id, alt) => {
               if (alt) {
                 setSolo((s) => (s === id ? null : id));
@@ -733,7 +783,10 @@ export default function App() {
               setOpen((o) => ({ ...o, [id]: !(o[id] ?? true) }));
             }}
             onLive={livePatch}
+            onLiveCrop={liveCrop}
             onCommit={commitHistory}
+            onToggleCropTool={() => setCropToolActive((v) => !v)}
+            onCropAspect={onCropAspect}
             onSelectMask={setSelectedMaskId}
             onAddRadialMask={addRadialMask}
             onAddBrushMask={addBrushMask}

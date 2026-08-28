@@ -1,5 +1,6 @@
-import { bitmapFromBlob, thumbnailFromBitmap } from "../render/preview";
-import { fileExists, fileUrl, isTauri, writeThumb, type ScannedFile } from "../native";
+import { applyPatch } from "../recipe/patch";
+import { bitmapFromBlob, bitmapFromRgb, thumbnailFromBitmap } from "../render/preview";
+import { decodeRaw, fileExists, fileUrl, isTauri, writeThumb, type ScannedFile } from "../native";
 import { emptyPhoto, upsertPhoto } from "./store";
 import { fileName, folderOf, photoId, type Photo } from "./types";
 
@@ -23,6 +24,31 @@ async function ingestBitmap(photo: Photo, blob: Blob): Promise<Photo> {
     const thumb = await thumbnailFromBitmap(bmp);
     if (isTauri()) {
       photo.thumbPath = await writeThumb(photo.id, new Uint8Array(await thumb.arrayBuffer()));
+    } else {
+      photo.blobUrl = URL.createObjectURL(thumb);
+    }
+  } finally {
+    bmp.close();
+  }
+  return meta(photo);
+}
+
+async function ingestRaw(photo: Photo, path: string): Promise<Photo> {
+  if (!isTauri()) return meta(photo);
+  const decoded = await decodeRaw(path);
+  photo.width = decoded.width;
+  photo.height = decoded.height;
+  const bmp = await bitmapFromRgb(decoded.width, decoded.height, new Uint8Array(decoded.rgb));
+  try {
+    const thumb = await thumbnailFromBitmap(bmp);
+    photo.thumbPath = await writeThumb(photo.id, new Uint8Array(await thumb.arrayBuffer()));
+    if (decoded.wb_temp != null || decoded.wb_tint != null) {
+      photo.recipe = applyPatch(photo.recipe, {
+        globals: {
+          temp: decoded.wb_temp ?? photo.recipe.globals.temp,
+          tint: decoded.wb_tint ?? photo.recipe.globals.tint,
+        },
+      });
     }
   } finally {
     bmp.close();
@@ -43,9 +69,15 @@ export async function photosFromScanned(existing: Photo[], files: ScannedFile[])
       folder: folderOf(f.path),
     });
     if (f.kind === "raw") {
-      const row = meta(photo);
-      added.push(row);
-      await upsertPhoto(row);
+      try {
+        const row = await ingestRaw(photo, f.path);
+        added.push(row);
+        await upsertPhoto(row);
+      } catch {
+        const row = meta(photo);
+        added.push(row);
+        await upsertPhoto(row);
+      }
       continue;
     }
     const exists = isTauri() ? await fileExists(f.path) : true;
@@ -92,4 +124,15 @@ export async function photosFromFileList(list: FileList): Promise<Photo[]> {
     }
   }
   return added;
+}
+
+export async function loadRawPreview(path: string) {
+  const decoded = await decodeRaw(path);
+  return {
+    bitmap: await bitmapFromRgb(decoded.width, decoded.height, new Uint8Array(decoded.rgb)),
+    width: decoded.width,
+    height: decoded.height,
+    wbTemp: decoded.wb_temp,
+    wbTint: decoded.wb_tint,
+  };
 }

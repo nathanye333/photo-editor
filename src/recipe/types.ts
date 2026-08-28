@@ -30,6 +30,20 @@ export type ToneCurve = {
   points: Array<[number, number]>;
 };
 
+export type CropAspect = "original" | "1:1" | "4:5" | "16:9" | "custom";
+
+/** Normalized crop on source image (origin top-left). Applied in preview + export. */
+export type Crop = {
+  enabled: boolean;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  /** Straighten angle in degrees. */
+  angle: number;
+  aspect: CropAspect;
+};
+
 export type Globals = {
   exposure: number;
   contrast: number;
@@ -49,6 +63,7 @@ export type Globals = {
   noiseReduction: number;
   /** Placeholder 0–100; unused in v1 renderer. */
   lensCorrection: number;
+  /** @deprecated Use recipe.crop.angle — kept for legacy recipes. */
   cropAngle: number;
 };
 
@@ -95,9 +110,12 @@ export type Mask = {
   params: Partial<Globals>;
 };
 
+export type CropPatch = Partial<Crop>;
+
 export type EditRecipe = {
   version: typeof RECIPE_VERSION;
   globals: Globals;
+  crop: Crop;
   masks: Mask[];
 };
 
@@ -127,6 +145,7 @@ export type MaskPatch = {
 
 export type DevelopPatch = {
   globals?: GlobalsPatch;
+  crop?: CropPatch;
   masks?: MaskPatch;
 };
 

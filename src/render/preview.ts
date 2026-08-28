@@ -1,9 +1,11 @@
 import { defaultRecipe } from "../recipe/defaults";
+import { cropPixelSize } from "../recipe/crop";
 import { mergeMaskGlobals } from "../recipe/patch";
 import {
   HSL_CHANNELS,
   MAX_MASKS,
   primaryComponent,
+  type Crop,
   type EditRecipe,
   type Globals,
   type Mask,
@@ -247,13 +249,19 @@ export class PreviewRenderer {
       this.canvas.height = hostH;
       return;
     }
+    const crop = this.recipe.crop;
+    const { w: cropW, h: cropH } = cropPixelSize(
+      crop.enabled ? crop : { ...crop, width: 1, height: 1 },
+      img.width,
+      img.height,
+    );
     if (view === "1:1") {
-      this.canvas.width = img.width;
-      this.canvas.height = img.height;
+      this.canvas.width = cropW;
+      this.canvas.height = cropH;
     } else {
-      const scale = Math.min(hostW / img.width, hostH / img.height, 1);
-      this.canvas.width = Math.max(1, Math.round(img.width * scale));
-      this.canvas.height = Math.max(1, Math.round(img.height * scale));
+      const scale = Math.min(hostW / cropW, hostH / cropH, 1);
+      this.canvas.width = Math.max(1, Math.round(cropW * scale));
+      this.canvas.height = Math.max(1, Math.round(cropH * scale));
     }
     this.schedule();
   }
@@ -281,7 +289,14 @@ export class PreviewRenderer {
     this.weightFbo = createFbo(gl, w, h);
   }
 
-  private setDevelopUniforms(program: WebGLProgram, g: Globals) {
+  private setCropUniforms(program: WebGLProgram, crop: Crop) {
+    const gl = this.gl;
+    gl.uniform1f(loc(gl, program, "uCropEnabled"), crop.enabled ? 1 : 0);
+    gl.uniform4f(loc(gl, program, "uCropRect"), crop.x, crop.y, crop.width, crop.height);
+    gl.uniform1f(loc(gl, program, "uCropAngle"), (crop.angle * Math.PI) / 180);
+  }
+
+  private setDevelopUniforms(program: WebGLProgram, g: Globals, crop: Crop) {
     const gl = this.gl;
     gl.uniform1i(loc(gl, program, "uImage"), 0);
     gl.uniform1f(loc(gl, program, "uExposure"), g.exposure);
@@ -314,9 +329,10 @@ export class PreviewRenderer {
     gl.uniform1f(loc(gl, program, "uDehaze"), g.dehaze);
     gl.uniform1f(loc(gl, program, "uSharpen"), g.sharpening);
     gl.uniform1f(loc(gl, program, "uNR"), g.noiseReduction);
+    this.setCropUniforms(program, crop);
   }
 
-  private drawDevelop(target: WebGLFramebuffer | null, g: Globals, w: number, h: number) {
+  private drawDevelop(target: WebGLFramebuffer | null, g: Globals, crop: Crop, w: number, h: number) {
     const gl = this.gl;
     gl.bindFramebuffer(gl.FRAMEBUFFER, target);
     gl.viewport(0, 0, w, h);
@@ -324,7 +340,7 @@ export class PreviewRenderer {
     gl.bindVertexArray(this.vao);
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, this.texture);
-    this.setDevelopUniforms(this.developProgram, g);
+    this.setDevelopUniforms(this.developProgram, g, crop);
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
   }
 
@@ -433,13 +449,14 @@ export class PreviewRenderer {
     if (!this.image) return;
 
     const recipe = this.before ? defaultRecipe() : this.recipe;
+    const crop = recipe.crop;
     const masks = recipe.masks
       .slice(0, MAX_MASKS)
       .map((mask) => ({ mask, component: primaryComponent(mask) }))
       .filter((x): x is { mask: Mask; component: MaskComponent } => isRenderableComponent(x.component));
 
     if (masks.length === 0) {
-      this.drawDevelop(null, recipe.globals, w, h);
+      this.drawDevelop(null, recipe.globals, crop, w, h);
       this.sampleHistogram();
       return;
     }
@@ -449,13 +466,13 @@ export class PreviewRenderer {
     const resultB = this.resultB!;
     const localFbo = this.localFbo!;
 
-    this.drawDevelop(resultA.fbo, recipe.globals, w, h);
+    this.drawDevelop(resultA.fbo, recipe.globals, crop, w, h);
 
     let read = resultA;
     let write = resultB;
     for (const { mask, component } of masks) {
       const localGlobals = mergeMaskGlobals(recipe.globals, mask.params);
-      this.drawDevelop(localFbo.fbo, localGlobals, w, h);
+      this.drawDevelop(localFbo.fbo, localGlobals, crop, w, h);
       this.drawWeight(component, mask, w, h);
       this.drawMix(write.fbo, read.tex, localFbo.tex, mask, w, h);
       const tmp = read;
@@ -504,8 +521,14 @@ export class PreviewRenderer {
     if (!img) throw new Error("no image");
     const prevW = this.canvas.width;
     const prevH = this.canvas.height;
-    this.canvas.width = img.width;
-    this.canvas.height = img.height;
+    const crop = this.recipe.crop;
+    const { w, h } = cropPixelSize(
+      crop.enabled ? crop : { ...crop, width: 1, height: 1 },
+      img.width,
+      img.height,
+    );
+    this.canvas.width = w;
+    this.canvas.height = h;
     this.render();
     const blob = await new Promise<Blob>((resolve, reject) => {
       this.canvas.toBlob((b) => (b ? resolve(b) : reject(new Error("export failed"))), "image/jpeg", quality);
@@ -532,6 +555,18 @@ export class PreviewRenderer {
 }
 
 const PREVIEW_MAX = 2048;
+
+export async function bitmapFromRgb(width: number, height: number, rgb: Uint8Array): Promise<ImageBitmap> {
+  const rgba = new Uint8ClampedArray(width * height * 4);
+  for (let i = 0, j = 0; i < rgb.length; i += 3, j += 4) {
+    rgba[j] = rgb[i];
+    rgba[j + 1] = rgb[i + 1];
+    rgba[j + 2] = rgb[i + 2];
+    rgba[j + 3] = 255;
+  }
+  const imageData = new ImageData(rgba, width, height);
+  return createImageBitmap(imageData);
+}
 
 export async function bitmapFromBlob(blob: Blob): Promise<ImageBitmap> {
   const probe = await createImageBitmap(blob);

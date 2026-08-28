@@ -247,6 +247,23 @@ export function createAgentTools(actions: AgentActions) {
         return { ok: true, masks: summarizeMasks(recipe.masks) };
       },
     }),
+    apply_crop_patch: tool({
+      description:
+        "Adjust crop and straighten. Coordinates are normalized 0–1 on the source image (top-left origin). Enable crop to apply on export.",
+      inputSchema: z.object({
+        enabled: z.boolean().optional(),
+        x: z.number().min(0).max(1).optional(),
+        y: z.number().min(0).max(1).optional(),
+        width: z.number().min(0.02).max(1).optional(),
+        height: z.number().min(0.02).max(1).optional(),
+        angle: z.number().min(-45).max(45).optional().describe("Straighten degrees"),
+        aspect: z.enum(["original", "1:1", "4:5", "16:9", "custom"]).optional(),
+      }),
+      execute: async (input) => {
+        const recipe = actions.patchDevelop({ crop: input });
+        return { ok: true, crop: recipe.crop };
+      },
+    }),
     apply_catalog_patch: tool({
       description: "Set star rating (0-5) and/or pick/reject flag.",
       inputSchema: z.object({

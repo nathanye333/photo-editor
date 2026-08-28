@@ -1,3 +1,4 @@
+import { defaultCrop } from "./crop";
 import {
   HSL_CHANNELS,
   type BrushStroke,
@@ -46,6 +47,7 @@ export function defaultRecipe(): EditRecipe {
   return {
     version: RECIPE_VERSION,
     globals: defaultGlobals(),
+    crop: defaultCrop(),
     masks: [],
   };
 }

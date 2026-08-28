@@ -1,3 +1,4 @@
+import { normalizeCrop } from "./crop";
 import { defaultGlobals, defaultRecipe } from "./defaults";
 import {
   HSL_CHANNELS,
@@ -5,6 +6,8 @@ import {
   RANGES,
   type BrushStroke,
   type CatalogPatch,
+  type Crop,
+  type CropPatch,
   type DevelopPatch,
   type EditRecipe,
   type Flag,
@@ -100,6 +103,15 @@ function normalizePoints(points: Array<[number, number]>): Array<[number, number
   pts[0][0] = 0;
   pts[pts.length - 1][0] = 1;
   return pts;
+}
+
+function applyCrop(current: Crop, patch: CropPatch | undefined, legacyAngle: number): Crop {
+  if (!patch) return current;
+  const merged = { ...current, ...patch };
+  if (patch.angle === undefined && patch.enabled === undefined) {
+    merged.angle = legacyAngle;
+  }
+  return normalizeCrop(merged, legacyAngle);
 }
 
 function applyGlobals(current: Globals, patch: GlobalsPatch | undefined, mode: PatchMode): Globals {
@@ -297,9 +309,22 @@ export function applyPatch(
   patch: DevelopPatch,
   mode: PatchMode = "absolute",
 ): EditRecipe {
+  const globals = applyGlobals(recipe.globals, patch.globals, mode);
+  const crop = applyCrop(recipe.crop, patch.crop, globals.cropAngle);
+  if (patch.crop?.angle !== undefined) {
+    globals.cropAngle = crop.angle;
+  } else if (patch.globals?.cropAngle !== undefined) {
+    return {
+      version: recipe.version,
+      globals,
+      crop: applyCrop(crop, { angle: globals.cropAngle }, globals.cropAngle),
+      masks: applyMasks(recipe.masks, patch.masks),
+    };
+  }
   return {
     version: recipe.version,
-    globals: applyGlobals(recipe.globals, patch.globals, mode),
+    globals,
+    crop,
     masks: applyMasks(recipe.masks, patch.masks),
   };
 }
@@ -317,17 +342,19 @@ export function applyCatalogPatch(
 export function parseRecipe(raw: unknown): EditRecipe {
   const fallback = defaultRecipe();
   if (!raw || typeof raw !== "object") return fallback;
-  const obj = raw as Partial<EditRecipe>;
+  const obj = raw as Partial<EditRecipe> & { crop?: Partial<Crop> };
   const g = obj.globals ?? defaultGlobals();
-  return applyPatch(
-    {
-      version: 1,
-      globals: { ...defaultGlobals(), ...g, hsl: { ...defaultGlobals().hsl, ...g.hsl } },
-      masks: Array.isArray(obj.masks) ? (obj.masks as Mask[]) : [],
-    },
-    { globals: {} },
-    "absolute",
-  );
+  const legacyAngle = typeof g.cropAngle === "number" ? g.cropAngle : 0;
+  const base: EditRecipe = {
+    version: 1,
+    globals: { ...defaultGlobals(), ...g, hsl: { ...defaultGlobals().hsl, ...g.hsl } },
+    crop: normalizeCrop(obj.crop, legacyAngle),
+    masks: Array.isArray(obj.masks) ? (obj.masks as Mask[]) : [],
+  };
+  if (base.crop.angle !== legacyAngle && !obj.crop?.angle) {
+    base.crop = { ...base.crop, angle: legacyAngle };
+  }
+  return applyPatch(base, { globals: {} }, "absolute");
 }
 
 export function parseCatalogFields(rating: unknown, flag: unknown): { rating: number; flag: Flag } {

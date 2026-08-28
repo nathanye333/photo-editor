@@ -190,6 +190,89 @@ h3 {
   max-height: 100%;
 }
 
+.preview-stage {
+  position: relative;
+  line-height: 0;
+}
+
+.crop-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.crop-box {
+  position: absolute;
+  border: 1px solid var(--accent);
+  box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.45);
+  pointer-events: auto;
+  cursor: move;
+}
+
+.crop-handle {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  background: var(--accent);
+  border: 1px solid #1a140c;
+  pointer-events: auto;
+}
+
+.crop-handle.nw,
+.crop-handle.se {
+  cursor: nwse-resize;
+}
+
+.crop-handle.ne,
+.crop-handle.sw {
+  cursor: nesw-resize;
+}
+
+.crop-straighten {
+  position: absolute;
+  width: 80px;
+  height: 8px;
+  background: var(--accent);
+  border-radius: 4px;
+  pointer-events: auto;
+  cursor: ew-resize;
+}
+
+.preview-host.crop-tool .preview {
+  cursor: crosshair;
+}
+
+.crop-tool-btn {
+  width: 100%;
+  margin-bottom: 8px;
+}
+
+.crop-enable {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+  color: var(--muted);
+}
+
+.panel-label {
+  margin: 0 0 4px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.aspect-btns {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+
+.aspect-btns button {
+  flex: 1 1 40%;
+  min-width: 52px;
+}
+
 .overlay {
   position: absolute;
   left: 50%;

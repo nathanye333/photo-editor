@@ -19,7 +19,7 @@ export function LibraryGrid(props: {
             onClick={() => props.onSelect(p.id)}
             onDoubleClick={() => props.onOpen(p.id)}
           >
-            {src && !p.missing && p.kind !== "raw" ? (
+            {src && !p.missing ? (
               <img src={src} alt={fileName(p.path)} />
             ) : (
               <div className="cell-miss">
@@ -55,7 +55,7 @@ export function Filmstrip(props: {
             onClick={() => props.onSelect(p.id)}
             title={fileName(p.path)}
           >
-            {src && !p.missing && p.kind !== "raw" ? (
+            {src && !p.missing ? (
               <img src={src} alt="" />
             ) : (
               <span className="cell-miss sm">{p.kind === "raw" ? "RAW" : "?"}</span>

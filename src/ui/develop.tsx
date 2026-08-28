@@ -1,6 +1,7 @@
 import { useState } from "react";
-import { HSL_CHANNELS, RANGES, type EditRecipe, type GlobalsPatch, type HslChannel, type Mask } from "../recipe/types";
+import { HSL_CHANNELS, RANGES, type CropAspect, type CropPatch, type EditRecipe, type GlobalsPatch, type HslChannel, type Mask } from "../recipe/types";
 import { Panel, Slider } from "./controls";
+import { GeometryPanel } from "./crop";
 import { MasksPanel, type BrushToolSettings } from "./masks";
 
 type Props = {
@@ -9,9 +10,13 @@ type Props = {
   open: Record<string, boolean>;
   selectedMaskId: string | null;
   brushTool: BrushToolSettings;
+  cropToolActive: boolean;
   onToggle: (id: string, alt: boolean) => void;
   onLive: (patch: GlobalsPatch) => void;
+  onLiveCrop: (patch: CropPatch) => void;
   onCommit: () => void;
+  onToggleCropTool: () => void;
+  onCropAspect: (aspect: CropAspect) => void;
   onSelectMask: (id: string) => void;
   onAddRadialMask: () => void;
   onAddBrushMask: () => void;
@@ -28,9 +33,13 @@ export function DevelopPanels({
   open,
   selectedMaskId,
   brushTool,
+  cropToolActive,
   onToggle,
   onLive,
+  onLiveCrop,
   onCommit,
+  onToggleCropTool,
+  onCropAspect,
   onSelectMask,
   onAddRadialMask,
   onAddBrushMask,
@@ -156,8 +165,14 @@ export function DevelopPanels({
         <p className="stub">Stored on the recipe; no profile library in v1.</p>
       </Panel>
       <Panel {...panel("geo", "Geometry")}>
-        {num("cropAngle", "Rotate", RANGES.cropAngle, 0.1)}
-        <p className="stub">Crop/perspective stay off until the mask/geometry pass.</p>
+        <GeometryPanel
+          crop={recipe.crop}
+          cropToolActive={cropToolActive}
+          onToggleCropTool={onToggleCropTool}
+          onLive={onLiveCrop}
+          onCommit={onCommit}
+          onAspect={onCropAspect}
+        />
       </Panel>
     </>
   );

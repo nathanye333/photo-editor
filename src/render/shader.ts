@@ -94,8 +94,23 @@ float toneMapLuma(float x) {
   return clamp(y, 0.0, 1.0);
 }
 
+vec2 mapCropUv(vec2 outUv) {
+  if (uCropEnabled < 0.5) return outUv;
+  vec2 center = uCropRect.xy + uCropRect.zw * 0.5;
+  vec2 p = uCropRect.xy + outUv * uCropRect.zw;
+  vec2 rel = p - center;
+  float rad = -uCropAngle;
+  float c = cos(rad);
+  float s = sin(rad);
+  return vec2(c * rel.x - s * rel.y, s * rel.x + c * rel.y) + center;
+}
+
 vec3 developSample() {
-  vec3 src = texture(uImage, vUv).rgb;
+  vec2 srcUv = mapCropUv(vUv);
+  if (uCropEnabled > 0.5 && (srcUv.x < 0.0 || srcUv.x > 1.0 || srcUv.y < 0.0 || srcUv.y > 1.0)) {
+    return vec3(0.08);
+  }
+  vec3 src = texture(uImage, srcUv).rgb;
   vec3 lin = toLinear(src);
 
   lin *= pow(2.0, uExposure);
@@ -137,10 +152,10 @@ vec3 developSample() {
 
   vec2 texel = 1.0 / vec2(textureSize(uImage, 0));
   vec3 blur = (
-    texture(uImage, vUv + vec2(texel.x, 0.0)).rgb +
-    texture(uImage, vUv - vec2(texel.x, 0.0)).rgb +
-    texture(uImage, vUv + vec2(0.0, texel.y)).rgb +
-    texture(uImage, vUv - vec2(0.0, texel.y)).rgb
+    texture(uImage, mapCropUv(vUv + vec2(texel.x, 0.0))).rgb +
+    texture(uImage, mapCropUv(vUv - vec2(texel.x, 0.0))).rgb +
+    texture(uImage, mapCropUv(vUv + vec2(0.0, texel.y))).rgb +
+    texture(uImage, mapCropUv(vUv - vec2(0.0, texel.y))).rgb
   ) * 0.25;
   vec3 detail = toSRGB(toLinear(src)) - blur;
   srgb = mix(srgb, blur, clamp(uNR / 160.0, 0.0, 0.65));
@@ -174,6 +189,9 @@ uniform float uClarity;
 uniform float uDehaze;
 uniform float uSharpen;
 uniform float uNR;
+uniform float uCropEnabled;
+uniform vec4 uCropRect;
+uniform float uCropAngle;
 `;
 
 export const FRAG = `#version 300 es

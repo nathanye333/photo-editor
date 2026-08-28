@@ -11,6 +11,18 @@ export type ScannedFile = {
   kind: "bitmap" | "raw";
 };
 
+export type DecodedRaw = {
+  width: number;
+  height: number;
+  rgb: number[];
+  wb_temp: number | null;
+  wb_tint: number | null;
+};
+
+export async function decodeRaw(path: string): Promise<DecodedRaw> {
+  return invoke("decode_raw", { path });
+}
+
 export async function pickFolder(): Promise<string | null> {
   const dir = await open({ directory: true, multiple: false });
   return typeof dir === "string" ? dir : null;
