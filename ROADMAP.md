@@ -17,7 +17,7 @@ Core develop globals, minimal library, and the agent.
 - [x] Library grid + filmstrip navigation
 - [x] Folder sidebar with "All photographs" filter
 - [x] Import by reference (JPEG, PNG, WebP)
-- [~] RAW catalogued without preview (CR2, CR3, NEF, ARW, DNG, RAF, ORF, RW2, RAW)
+- [x] RAW import with ffmpeg decode + thumbnails (desktop)
 - [x] Star ratings (0–5)
 - [x] Pick / reject / unflagged flags
 - [x] Keyboard shortcuts (`0–5`, `P` / `X` / `U`, arrows, `\` before/after, undo/redo)
