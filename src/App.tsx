@@ -6,11 +6,11 @@ import { photoThumbSrc } from "./catalog/media";
 import { emptyPhoto, loadPhotos, loadPresets, openCatalog, savePresetRow, upsertPhoto } from "./catalog/store";
 import { fileName, type Photo, type Preset } from "./catalog/types";
 import { fileExists, fileUrl, isTauri, pickFolder, pickSaveJpeg, scanFolder, writeFileBytes } from "./native";
-import { applyAspectPreset } from "./recipe/crop";
+import { applyAspectPreset, defaultCrop, normalizeCrop } from "./recipe/crop";
 import { cloneRecipe, createBrushMask, createColorRangeMask, createLuminanceMask, createRadialMask, defaultRecipe } from "./recipe/defaults";
 import { pushHistory, redo, undo } from "./recipe/history";
 import { applyCatalogPatch, applyPatch } from "./recipe/patch";
-import type { BrushStroke, CatalogPatch, CropAspect, CropPatch, EditRecipe, Flag, GlobalsPatch, Mask } from "./recipe/types";
+import type { BrushStroke, CatalogPatch, Crop, CropAspect, CropPatch, EditRecipe, Flag, GlobalsPatch, Mask } from "./recipe/types";
 import { primaryComponent } from "./recipe/types";
 import { bitmapFromBlob, PreviewRenderer, thumbnailFromBitmap, type HistogramStats, type ViewMode } from "./render/preview";
 import { createSampleBitmap } from "./render/sampleImage";
@@ -67,6 +67,7 @@ export default function App() {
   const selectedMaskIdRef = useRef<string | null>(null);
   selectedMaskIdRef.current = selectedMaskId;
   const [cropToolActive, setCropToolActive] = useState(false);
+  const [draftCrop, setDraftCrop] = useState<Crop | null>(null);
   const [previewSize, setPreviewSize] = useState({ w: 0, h: 0 });
   const [brushCursor, setBrushCursor] = useState<{ x: number; y: number; d: number } | null>(null);
   const [hist, setHist] = useState<HistogramStats | null>(null);
@@ -133,17 +134,20 @@ export default function App() {
     rendererRef.current?.setBefore(before);
   }, [before]);
 
+  function recipeForPreview(recipe: EditRecipe): EditRecipe {
+    if (!cropToolActive) return recipe;
+    const crop = draftCrop ?? recipe.crop;
+    return { ...recipe, crop: { ...crop, enabled: false } };
+  }
+
   useEffect(() => {
-    const recipe = photo?.recipe ?? defaultRecipe();
-    const displayRecipe = cropToolActive
-      ? { ...recipe, crop: { ...recipe.crop, enabled: false } }
-      : recipe;
-    rendererRef.current?.setRecipe(displayRecipe);
-  }, [photo?.recipe, cropToolActive]);
+    rendererRef.current?.setRecipe(recipeForPreview(photo?.recipe ?? defaultRecipe()));
+  }, [photo?.recipe, cropToolActive, draftCrop]);
 
   useEffect(() => {
     setSelectedMaskId(photo?.recipe.masks[0]?.id ?? null);
     setCropToolActive(false);
+    setDraftCrop(null);
   }, [photo?.id]);
 
   useEffect(() => {
@@ -208,9 +212,9 @@ export default function App() {
     const renderer = rendererRef.current;
     const canvas = canvasRef.current;
     if (!host || !renderer) return;
-    renderer.layout(view, host.clientWidth, host.clientHeight);
+    renderer.layout(view, host.clientWidth, host.clientHeight, cropToolActive);
     if (canvas) setPreviewSize({ w: canvas.width, h: canvas.height });
-  }, [view]);
+  }, [view, cropToolActive]);
 
   useEffect(() => {
     layoutPreview();
@@ -219,7 +223,19 @@ export default function App() {
     const ro = new ResizeObserver(layoutPreview);
     ro.observe(host);
     return () => ro.disconnect();
-  }, [layoutPreview, photo?.id, photo?.recipe.crop, cropToolActive]);
+  }, [layoutPreview, photo?.id, cropToolActive]);
+
+  function patchDraftCrop(patch: CropPatch) {
+    setDraftCrop((prev) =>
+      normalizeCrop({ ...(prev ?? photoRef.current?.recipe.crop ?? defaultCrop()), ...patch }),
+    );
+  }
+
+  function commitDraftCrop() {
+    const current = photoRef.current;
+    if (!current || !draftCrop) return;
+    commitRecipe(applyPatch(current.recipe, { crop: draftCrop }, "absolute"));
+  }
 
   function liveCrop(patch: CropPatch) {
     const current = photoRef.current;
@@ -235,13 +251,23 @@ export default function App() {
     const current = photoRef.current;
     if (!current?.width || !current.height) return;
     const crop = applyAspectPreset(current.recipe.crop, aspect, current.width, current.height);
+    setDraftCrop(crop);
     commitRecipe(applyPatch(current.recipe, { crop }, "absolute"));
+    setCropToolActive(true);
+  }
+
+  function toggleCropTool() {
+    if (cropToolActive) {
+      commitDraftCrop();
+      setCropToolActive(false);
+      return;
+    }
+    setDraftCrop(photoRef.current?.recipe.crop ?? defaultCrop());
     setCropToolActive(true);
   }
 
   function replacePhoto(next: Photo, persist = true) {
     photoRef.current = next;
-    rendererRef.current?.setRecipe(next.recipe);
     setPhotos((ps) => ps.map((p) => (p.id === next.id ? next : p)));
     if (persist && next.kind !== "sample") void upsertPhoto(next);
   }
@@ -353,7 +379,7 @@ export default function App() {
     const recipe = applyPatch(current.recipe, { masks: { upsert: [next] } }, "absolute");
     // Update WebGL immediately so the brush tracks the cursor; defer React state to pointer-up.
     photoRef.current = { ...current, recipe };
-    rendererRef.current?.setRecipe(recipe);
+    rendererRef.current?.setRecipe(recipeForPreview(recipe));
   }
 
   function finishBrushStroke() {
@@ -728,11 +754,11 @@ export default function App() {
             />
             {cropToolActive && previewSize.w > 0 && photo ? (
               <CropOverlay
-                crop={photo.recipe.crop}
+                crop={draftCrop ?? photo.recipe.crop}
                 width={previewSize.w}
                 height={previewSize.h}
-                onLive={liveCrop}
-                onCommit={commitHistory}
+                onLive={patchDraftCrop}
+                onCommit={commitDraftCrop}
               />
             ) : null}
           </div>
@@ -770,6 +796,7 @@ export default function App() {
         {photo && mod === "develop" ? (
           <DevelopPanels
             recipe={photo.recipe}
+            crop={draftCrop ?? photo.recipe.crop}
             solo={solo}
             open={open}
             selectedMaskId={selectedMaskId}
@@ -783,9 +810,10 @@ export default function App() {
               setOpen((o) => ({ ...o, [id]: !(o[id] ?? true) }));
             }}
             onLive={livePatch}
-            onLiveCrop={liveCrop}
+            onLiveCrop={cropToolActive ? patchDraftCrop : liveCrop}
             onCommit={commitHistory}
-            onToggleCropTool={() => setCropToolActive((v) => !v)}
+            onCommitCrop={cropToolActive ? commitDraftCrop : commitHistory}
+            onToggleCropTool={toggleCropTool}
             onCropAspect={onCropAspect}
             onSelectMask={setSelectedMaskId}
             onAddRadialMask={addRadialMask}

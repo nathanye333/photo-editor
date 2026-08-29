@@ -242,7 +242,7 @@ export class PreviewRenderer {
     return { r, g, b, ...hc };
   }
 
-  layout(view: ViewMode, hostW: number, hostH: number) {
+  layout(view: ViewMode, hostW: number, hostH: number, editingCrop = false) {
     const img = this.image;
     if (!img) {
       this.canvas.width = hostW;
@@ -250,8 +250,9 @@ export class PreviewRenderer {
       return;
     }
     const crop = this.recipe.crop;
+    const useCrop = crop.enabled && !editingCrop;
     const { w: cropW, h: cropH } = cropPixelSize(
-      crop.enabled ? crop : { ...crop, width: 1, height: 1 },
+      useCrop ? crop : { ...crop, width: 1, height: 1 },
       img.width,
       img.height,
     );

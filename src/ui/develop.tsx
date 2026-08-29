@@ -1,11 +1,12 @@
 import { useState } from "react";
-import { HSL_CHANNELS, RANGES, type CropAspect, type CropPatch, type EditRecipe, type GlobalsPatch, type HslChannel, type Mask } from "../recipe/types";
+import { HSL_CHANNELS, RANGES, type Crop, type CropAspect, type CropPatch, type EditRecipe, type GlobalsPatch, type HslChannel, type Mask } from "../recipe/types";
 import { Panel, Slider } from "./controls";
 import { GeometryPanel } from "./crop";
 import { MasksPanel, type BrushToolSettings } from "./masks";
 
 type Props = {
   recipe: EditRecipe;
+  crop: Crop;
   solo: string | null;
   open: Record<string, boolean>;
   selectedMaskId: string | null;
@@ -15,6 +16,7 @@ type Props = {
   onLive: (patch: GlobalsPatch) => void;
   onLiveCrop: (patch: CropPatch) => void;
   onCommit: () => void;
+  onCommitCrop: () => void;
   onToggleCropTool: () => void;
   onCropAspect: (aspect: CropAspect) => void;
   onSelectMask: (id: string) => void;
@@ -29,6 +31,7 @@ type Props = {
 
 export function DevelopPanels({
   recipe,
+  crop,
   solo,
   open,
   selectedMaskId,
@@ -38,6 +41,7 @@ export function DevelopPanels({
   onLive,
   onLiveCrop,
   onCommit,
+  onCommitCrop,
   onToggleCropTool,
   onCropAspect,
   onSelectMask,
@@ -166,11 +170,11 @@ export function DevelopPanels({
       </Panel>
       <Panel {...panel("geo", "Geometry")}>
         <GeometryPanel
-          crop={recipe.crop}
+          crop={crop}
           cropToolActive={cropToolActive}
           onToggleCropTool={onToggleCropTool}
           onLive={onLiveCrop}
-          onCommit={onCommit}
+          onCommit={onCommitCrop}
           onAspect={onCropAspect}
         />
       </Panel>

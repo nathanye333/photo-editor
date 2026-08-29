@@ -61,7 +61,7 @@ export function GeometryPanel({
         min={RANGES.cropAngle[0]}
         max={RANGES.cropAngle[1]}
         step={0.1}
-        onChange={(v) => onLive({ angle: v, enabled: crop.enabled || cropToolActive })}
+        onChange={(v) => onLive({ angle: v })}
         onCommit={onCommit}
         onReset={() => {
           onLive({ angle: 0 });
@@ -111,7 +111,6 @@ export function CropOverlay({ crop, width, height, onLive, onCommit }: CropOverl
         onLive({
           x: Math.min(1 - base.width, Math.max(0, base.x + dx)),
           y: Math.min(1 - base.height, Math.max(0, base.y + dy)),
-          enabled: true,
         });
         return;
       }
@@ -119,7 +118,7 @@ export function CropOverlay({ crop, width, height, onLive, onCommit }: CropOverl
         const cx = base.x + base.width / 2;
         const cy = base.y + base.height / 2;
         const angle = (Math.atan2(ny - cy, nx - cx) * 180) / Math.PI;
-        onLive({ angle: Math.min(RANGES.cropAngle[1], Math.max(RANGES.cropAngle[0], angle)), enabled: true });
+        onLive({ angle: Math.min(RANGES.cropAngle[1], Math.max(RANGES.cropAngle[0], angle)) });
         return;
       }
       let x = base.x;
@@ -142,7 +141,7 @@ export function CropOverlay({ crop, width, height, onLive, onCommit }: CropOverl
       }
       x = Math.min(1 - w, Math.max(0, x));
       y = Math.min(1 - h, Math.max(0, y));
-      onLive({ x, y, width: w, height: h, enabled: true, aspect: "custom" });
+      onLive({ x, y, width: w, height: h, aspect: "custom" });
     }
 
     function onUp() {
