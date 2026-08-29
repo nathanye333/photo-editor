@@ -229,9 +229,27 @@ h3 {
 
 .crop-handle-dot {
   display: block;
-  background: var(--accent);
-  border: 1px solid #1a140c;
+  background: #fff;
+  border: 1px solid rgba(0, 0, 0, 0.75);
   border-style: solid;
+  box-shadow: 0 0 3px rgba(0, 0, 0, 0.6);
+}
+
+.crop-grid-v,
+.crop-grid-h {
+  position: absolute;
+  background: rgba(255, 255, 255, 0.35);
+  pointer-events: none;
+}
+
+.crop-grid-v {
+  top: 0;
+  bottom: 0;
+}
+
+.crop-grid-h {
+  left: 0;
+  right: 0;
 }
 
 .crop-handle.nw,

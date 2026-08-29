@@ -202,7 +202,12 @@ export function CropOverlay({ crop, width, height, scale, onLive, onCommit }: Cr
           borderWidth: 1 / scale,
         }}
         onPointerDown={(e) => startDrag("move", e)}
-      />
+      >
+        <span className="crop-grid-v" style={{ left: "33.333%", width: 1 / scale }} />
+        <span className="crop-grid-v" style={{ left: "66.667%", width: 1 / scale }} />
+        <span className="crop-grid-h" style={{ top: "33.333%", height: 1 / scale }} />
+        <span className="crop-grid-h" style={{ top: "66.667%", height: 1 / scale }} />
+      </div>
       {handles.map((h) => (
         <div key={h.id} className={`crop-handle ${h.id}`} style={h.style} onPointerDown={(e) => startDrag(h.id, e)}>
           <span className="crop-handle-dot" style={{ width: dot, height: dot, borderWidth: 1 / scale }} />
