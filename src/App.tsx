@@ -68,7 +68,11 @@ export default function App() {
   selectedMaskIdRef.current = selectedMaskId;
   const [cropToolActive, setCropToolActive] = useState(false);
   const [draftCrop, setDraftCrop] = useState<Crop | null>(null);
+  /** Crop the view is zoomed to; only updated on commit so drags never reframe. */
+  const [cropFrame, setCropFrame] = useState<Crop | null>(null);
+  const draftCropRef = useRef<Crop | null>(null);
   const [previewSize, setPreviewSize] = useState({ w: 0, h: 0 });
+  const [hostSize, setHostSize] = useState({ w: 0, h: 0 });
   const [brushCursor, setBrushCursor] = useState<{ x: number; y: number; d: number } | null>(null);
   const [hist, setHist] = useState<HistogramStats | null>(null);
   const [agentOpen, setAgentOpen] = useState(true);
@@ -148,6 +152,8 @@ export default function App() {
     setSelectedMaskId(photo?.recipe.masks[0]?.id ?? null);
     setCropToolActive(false);
     setDraftCrop(null);
+    setCropFrame(null);
+    draftCropRef.current = null;
   }, [photo?.id]);
 
   useEffect(() => {
@@ -213,6 +219,7 @@ export default function App() {
     const canvas = canvasRef.current;
     if (!host || !renderer) return;
     renderer.layout(view, host.clientWidth, host.clientHeight, cropToolActive);
+    setHostSize({ w: host.clientWidth, h: host.clientHeight });
     if (canvas) setPreviewSize({ w: canvas.width, h: canvas.height });
   }, [view, cropToolActive]);
 
@@ -225,46 +232,86 @@ export default function App() {
     return () => ro.disconnect();
   }, [layoutPreview, photo?.id, cropToolActive]);
 
-  function patchDraftCrop(patch: CropPatch) {
-    setDraftCrop((prev) =>
-      normalizeCrop({ ...(prev ?? photoRef.current?.recipe.crop ?? defaultCrop()), ...patch }),
-    );
+  function setDraft(crop: Crop) {
+    draftCropRef.current = crop;
+    setDraftCrop(crop);
   }
 
+  function patchDraftCrop(patch: CropPatch) {
+    const base = draftCropRef.current ?? photoRef.current?.recipe.crop ?? defaultCrop();
+    setDraft(normalizeCrop({ ...base, ...patch }));
+  }
+
+  /** Apply the drafted crop to the recipe and reframe the view onto it. */
   function commitDraftCrop() {
     const current = photoRef.current;
-    if (!current || !draftCrop) return;
-    commitRecipe(applyPatch(current.recipe, { crop: draftCrop }, "absolute"));
+    const draft = draftCropRef.current;
+    if (!current || !draft) return;
+    const crop = normalizeCrop({ ...draft, enabled: true });
+    setDraft(crop);
+    setCropFrame(crop);
+    commitRecipe(applyPatch(current.recipe, { crop }, "absolute"));
   }
 
   function liveCrop(patch: CropPatch) {
     const current = photoRef.current;
     if (!current) return;
-    const next = applyPatch(current.recipe, { crop: patch }, "absolute");
-    if (patch.angle !== undefined) {
-      next.globals = { ...next.globals, cropAngle: next.crop.angle };
-    }
-    replacePhoto({ ...current, recipe: next }, false);
+    replacePhoto({ ...current, recipe: applyPatch(current.recipe, { crop: patch }, "absolute") }, false);
   }
 
   function onCropAspect(aspect: CropAspect) {
     const current = photoRef.current;
     if (!current?.width || !current.height) return;
-    const crop = applyAspectPreset(current.recipe.crop, aspect, current.width, current.height);
-    setDraftCrop(crop);
+    const base = draftCropRef.current ?? current.recipe.crop;
+    const crop = applyAspectPreset(base, aspect, current.width, current.height);
+    setDraft(crop);
+    setCropFrame(crop);
     commitRecipe(applyPatch(current.recipe, { crop }, "absolute"));
     setCropToolActive(true);
   }
 
-  function toggleCropTool() {
-    if (cropToolActive) {
-      commitDraftCrop();
-      setCropToolActive(false);
-      return;
-    }
-    setDraftCrop(photoRef.current?.recipe.crop ?? defaultCrop());
+  function onResetCrop() {
+    const current = photoRef.current;
+    if (!current) return;
+    const crop = defaultCrop();
+    setDraft(crop);
+    setCropFrame(crop);
+    commitRecipe(applyPatch(current.recipe, { crop }, "absolute"));
+  }
+
+  function openCropTool() {
+    const crop = photoRef.current?.recipe.crop ?? defaultCrop();
+    setDraft(crop);
+    setCropFrame(crop);
     setCropToolActive(true);
   }
+
+  function closeCropTool() {
+    commitDraftCrop();
+    setCropToolActive(false);
+  }
+
+  function toggleCropTool() {
+    if (cropToolActive) closeCropTool();
+    else openCropTool();
+  }
+
+  /** Zoom/pan so the committed crop fills the viewport, Lightroom-style. */
+  const cropView = useMemo(() => {
+    const identity = { scale: 1, transform: "none" };
+    if (!cropToolActive || !cropFrame || !previewSize.w || !hostSize.w) return identity;
+    const pad = 32;
+    const frameW = cropFrame.width * previewSize.w;
+    const frameH = cropFrame.height * previewSize.h;
+    if (frameW < 1 || frameH < 1) return identity;
+    const scale = Math.min(
+      8,
+      Math.max(1, Math.min((hostSize.w - pad) / frameW, (hostSize.h - pad) / frameH)),
+    );
+    const dx = previewSize.w / 2 - (cropFrame.x + cropFrame.width / 2) * previewSize.w;
+    const dy = previewSize.h / 2 - (cropFrame.y + cropFrame.height / 2) * previewSize.h;
+    return { scale, transform: `scale(${scale}) translate(${dx}px, ${dy}px)` };
+  }, [cropToolActive, cropFrame, previewSize, hostSize]);
 
   function replacePhoto(next: Photo, persist = true) {
     photoRef.current = next;
@@ -535,10 +582,21 @@ export default function App() {
     setSelectedId(next.id);
   }
 
+  const cropKeys = useRef({ active: cropToolActive, toggle: toggleCropTool, close: closeCropTool });
+  cropKeys.current = { active: cropToolActive, toggle: toggleCropTool, close: closeCropTool };
+
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       const t = e.target as HTMLElement;
       if (t.tagName === "INPUT" || t.tagName === "TEXTAREA") return;
+      if (e.key === "r" || e.key === "R") {
+        cropKeys.current.toggle();
+        return;
+      }
+      if (cropKeys.current.active && (e.key === "Enter" || e.key === "Escape")) {
+        cropKeys.current.close();
+        return;
+      }
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "z") {
         e.preventDefault();
         if (e.shiftKey) doRedo();
@@ -741,7 +799,10 @@ export default function App() {
             mod === "develop" && selectedMaskId ? " mask-interact" : ""
           }${brushToolActive ? " brush-tool" : ""}${cropToolActive ? " crop-tool" : ""}`}
         >
-          <div className="preview-stage">
+          <div
+            className={`preview-stage${cropToolActive ? " cropping" : ""}`}
+            style={{ transform: cropView.transform }}
+          >
             <canvas
               ref={canvasRef}
               className="preview"
@@ -757,6 +818,7 @@ export default function App() {
                 crop={draftCrop ?? photo.recipe.crop}
                 width={previewSize.w}
                 height={previewSize.h}
+                scale={cropView.scale}
                 onLive={patchDraftCrop}
                 onCommit={commitDraftCrop}
               />
@@ -815,6 +877,7 @@ export default function App() {
             onCommitCrop={cropToolActive ? commitDraftCrop : commitHistory}
             onToggleCropTool={toggleCropTool}
             onCropAspect={onCropAspect}
+            onResetCrop={onResetCrop}
             onSelectMask={setSelectedMaskId}
             onAddRadialMask={addRadialMask}
             onAddBrushMask={addBrushMask}

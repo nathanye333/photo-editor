@@ -1,5 +1,5 @@
 import { defaultRecipe } from "../recipe/defaults";
-import { cropPixelSize } from "../recipe/crop";
+import { cropAffectsPixels, cropPixelSize } from "../recipe/crop";
 import { mergeMaskGlobals } from "../recipe/patch";
 import {
   HSL_CHANNELS,
@@ -292,7 +292,7 @@ export class PreviewRenderer {
 
   private setCropUniforms(program: WebGLProgram, crop: Crop) {
     const gl = this.gl;
-    gl.uniform1f(loc(gl, program, "uCropEnabled"), crop.enabled ? 1 : 0);
+    gl.uniform1f(loc(gl, program, "uCropEnabled"), cropAffectsPixels(crop) ? 1 : 0);
     gl.uniform4f(loc(gl, program, "uCropRect"), crop.x, crop.y, crop.width, crop.height);
     gl.uniform1f(loc(gl, program, "uCropAngle"), (crop.angle * Math.PI) / 180);
   }

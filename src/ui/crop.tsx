@@ -16,6 +16,7 @@ type GeometryPanelProps = {
   onLive: (patch: CropPatch) => void;
   onCommit: () => void;
   onAspect: (aspect: CropAspect) => void;
+  onResetCrop: () => void;
 };
 
 export function GeometryPanel({
@@ -25,23 +26,22 @@ export function GeometryPanel({
   onLive,
   onCommit,
   onAspect,
+  onResetCrop,
 }: GeometryPanelProps) {
   return (
     <>
-      <button type="button" className={cropToolActive ? "on crop-tool-btn" : "crop-tool-btn"} onClick={onToggleCropTool}>
-        {cropToolActive ? "Done cropping" : "Crop overlay"}
-      </button>
-      <label className="crop-enable">
-        <input
-          type="checkbox"
-          checked={crop.enabled}
-          onChange={(e) => {
-            onLive({ enabled: e.target.checked });
-            onCommit();
-          }}
-        />
-        Apply crop on export
-      </label>
+      <div className="crop-tool-row">
+        <button
+          type="button"
+          className={cropToolActive ? "on crop-tool-btn" : "crop-tool-btn"}
+          onClick={onToggleCropTool}
+        >
+          {cropToolActive ? "Done (R)" : "Crop (R)"}
+        </button>
+        <button type="button" className="btn-ghost" onClick={onResetCrop} disabled={!crop.enabled && crop.angle === 0}>
+          Reset
+        </button>
+      </div>
       <p className="panel-label">Aspect ratio</p>
       <div className="aspect-btns">
         {ASPECTS.map((a) => (
@@ -78,6 +78,8 @@ type CropOverlayProps = {
   crop: Crop;
   width: number;
   height: number;
+  /** View zoom applied to the stage; handles are counter-scaled to stay a constant size. */
+  scale: number;
   onLive: (patch: CropPatch) => void;
   onCommit: () => void;
 };
@@ -89,11 +91,13 @@ function screenToNorm(clientX: number, clientY: number, rect: DOMRect): [number,
   ];
 }
 
-export function CropOverlay({ crop, width, height, onLive, onCommit }: CropOverlayProps) {
+export function CropOverlay({ crop, width, height, scale, onLive, onCommit }: CropOverlayProps) {
   const left = crop.x * width;
   const top = crop.y * height;
   const boxW = crop.width * width;
   const boxH = crop.height * height;
+  const hit = 12 / scale;
+  const half = hit / 2;
 
   function startDrag(handle: CropHandle, e: React.PointerEvent) {
     e.preventDefault();
@@ -154,11 +158,19 @@ export function CropOverlay({ crop, width, height, onLive, onCommit }: CropOverl
     window.addEventListener("pointerup", onUp);
   }
 
+  const handleStyle = (x: number, y: number): React.CSSProperties => ({
+    left: x - half,
+    top: y - half,
+    width: hit,
+    height: hit,
+    borderWidth: 1 / scale,
+  });
+
   const handles: { id: CropHandle; style: React.CSSProperties }[] = [
-    { id: "nw", style: { left: left - 5, top: top - 5 } },
-    { id: "ne", style: { left: left + boxW - 5, top: top - 5 } },
-    { id: "sw", style: { left: left - 5, top: top + boxH - 5 } },
-    { id: "se", style: { left: left + boxW - 5, top: top + boxH - 5 } },
+    { id: "nw", style: handleStyle(left, top) },
+    { id: "ne", style: handleStyle(left + boxW, top) },
+    { id: "sw", style: handleStyle(left, top + boxH) },
+    { id: "se", style: handleStyle(left + boxW, top + boxH) },
   ];
 
   return (
@@ -171,6 +183,7 @@ export function CropOverlay({ crop, width, height, onLive, onCommit }: CropOverl
           width: boxW,
           height: boxH,
           transform: `rotate(${crop.angle}deg)`,
+          borderWidth: 1 / scale,
         }}
         onPointerDown={(e) => startDrag("move", e)}
       />
@@ -179,7 +192,13 @@ export function CropOverlay({ crop, width, height, onLive, onCommit }: CropOverl
       ))}
       <div
         className="crop-straighten"
-        style={{ left: left + boxW / 2 - 40, top: top + boxH * 0.9 - 4 }}
+        style={{
+          left: left + boxW / 2 - 40 / scale,
+          top: top + boxH * 0.9,
+          width: 80 / scale,
+          height: 8 / scale,
+          borderRadius: 4 / scale,
+        }}
         onPointerDown={(e) => startDrag("straighten", e)}
       />
     </div>

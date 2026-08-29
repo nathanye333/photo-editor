@@ -193,6 +193,17 @@ h3 {
 .preview-stage {
   position: relative;
   line-height: 0;
+  transform-origin: center;
+}
+
+.preview-stage.cropping {
+  transition: transform 180ms ease-out;
+}
+
+.crop-tool-row {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 8px;
 }
 
 .crop-overlay {
@@ -211,10 +222,9 @@ h3 {
 
 .crop-handle {
   position: absolute;
-  width: 10px;
-  height: 10px;
   background: var(--accent);
   border: 1px solid #1a140c;
+  border-style: solid;
   pointer-events: auto;
 }
 
@@ -230,10 +240,7 @@ h3 {
 
 .crop-straighten {
   position: absolute;
-  width: 80px;
-  height: 8px;
   background: var(--accent);
-  border-radius: 4px;
   pointer-events: auto;
   cursor: ew-resize;
 }
@@ -243,16 +250,7 @@ h3 {
 }
 
 .crop-tool-btn {
-  width: 100%;
-  margin-bottom: 8px;
-}
-
-.crop-enable {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-bottom: 8px;
-  color: var(--muted);
+  flex: 1;
 }
 
 .panel-label {

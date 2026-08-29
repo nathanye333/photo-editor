@@ -19,6 +19,7 @@ type Props = {
   onCommitCrop: () => void;
   onToggleCropTool: () => void;
   onCropAspect: (aspect: CropAspect) => void;
+  onResetCrop: () => void;
   onSelectMask: (id: string) => void;
   onAddRadialMask: () => void;
   onAddBrushMask: () => void;
@@ -44,6 +45,7 @@ export function DevelopPanels({
   onCommitCrop,
   onToggleCropTool,
   onCropAspect,
+  onResetCrop,
   onSelectMask,
   onAddRadialMask,
   onAddBrushMask,
@@ -176,6 +178,7 @@ export function DevelopPanels({
           onLive={onLiveCrop}
           onCommit={onCommitCrop}
           onAspect={onCropAspect}
+          onResetCrop={onResetCrop}
         />
       </Panel>
     </>

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applyAspectPreset, defaultCrop, normalizeCrop } from "./crop";
+import { applyAspectPreset, cropAffectsPixels, defaultCrop, normalizeCrop } from "./crop";
 import { defaultRecipe } from "./defaults";
 import { applyPatch } from "./patch";
 
@@ -19,6 +19,12 @@ describe("crop", () => {
     expect(next.enabled).toBe(true);
     const ratio = (next.width * 4000) / (next.height * 3000);
     expect(ratio).toBeCloseTo(4 / 5, 2);
+  });
+
+  it("renders the crop pass for straighten without a crop rect", () => {
+    expect(cropAffectsPixels(defaultCrop())).toBe(false);
+    expect(cropAffectsPixels({ ...defaultCrop(), angle: 2 })).toBe(true);
+    expect(cropAffectsPixels({ ...defaultCrop(), enabled: true })).toBe(true);
   });
 });
 

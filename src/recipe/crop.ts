@@ -71,6 +71,11 @@ export function normalizeCrop(raw: Partial<Crop> | undefined, legacyAngle = 0): 
   };
 }
 
+/** Straighten alone still needs the crop pass, so it can rotate about the frame center. */
+export function cropAffectsPixels(crop: Crop): boolean {
+  return crop.enabled || crop.angle !== 0;
+}
+
 export function cropPixelSize(crop: Crop, imgW: number, imgH: number): { w: number; h: number } {
   if (!crop.enabled) return { w: imgW, h: imgH };
   return {
