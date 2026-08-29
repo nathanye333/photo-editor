@@ -74,6 +74,27 @@ export function GeometryPanel({
 
 export type CropHandle = "move" | "nw" | "ne" | "sw" | "se" | "straighten";
 
+/**
+ * Hit box for a corner handle, kept fully inside the preview. Handles centred on a
+ * frame-edge corner spill outside the clipped preview column and stop receiving
+ * pointer events, so the box is nudged inward instead.
+ */
+export function handleHitBox(
+  centerX: number,
+  centerY: number,
+  hit: number,
+  width: number,
+  height: number,
+): { left: number; top: number; width: number; height: number } {
+  const fit = (v: number, extent: number) => Math.min(Math.max(v, 0), Math.max(0, extent - hit));
+  return {
+    left: fit(centerX - hit / 2, width),
+    top: fit(centerY - hit / 2, height),
+    width: hit,
+    height: hit,
+  };
+}
+
 type CropOverlayProps = {
   crop: Crop;
   width: number;
@@ -96,8 +117,9 @@ export function CropOverlay({ crop, width, height, scale, onLive, onCommit }: Cr
   const top = crop.y * height;
   const boxW = crop.width * width;
   const boxH = crop.height * height;
-  const hit = 12 / scale;
-  const half = hit / 2;
+  // Hit areas stay a generous 24px on screen; the visible marker inside is smaller.
+  const hit = 24 / scale;
+  const dot = 10 / scale;
 
   function startDrag(handle: CropHandle, e: React.PointerEvent) {
     e.preventDefault();
@@ -158,13 +180,7 @@ export function CropOverlay({ crop, width, height, scale, onLive, onCommit }: Cr
     window.addEventListener("pointerup", onUp);
   }
 
-  const handleStyle = (x: number, y: number): React.CSSProperties => ({
-    left: x - half,
-    top: y - half,
-    width: hit,
-    height: hit,
-    borderWidth: 1 / scale,
-  });
+  const handleStyle = (x: number, y: number): React.CSSProperties => handleHitBox(x, y, hit, width, height);
 
   const handles: { id: CropHandle; style: React.CSSProperties }[] = [
     { id: "nw", style: handleStyle(left, top) },
@@ -188,7 +204,9 @@ export function CropOverlay({ crop, width, height, scale, onLive, onCommit }: Cr
         onPointerDown={(e) => startDrag("move", e)}
       />
       {handles.map((h) => (
-        <div key={h.id} className={`crop-handle ${h.id}`} style={h.style} onPointerDown={(e) => startDrag(h.id, e)} />
+        <div key={h.id} className={`crop-handle ${h.id}`} style={h.style} onPointerDown={(e) => startDrag(h.id, e)}>
+          <span className="crop-handle-dot" style={{ width: dot, height: dot, borderWidth: 1 / scale }} />
+        </div>
       ))}
       <div
         className="crop-straighten"

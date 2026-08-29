@@ -222,10 +222,16 @@ h3 {
 
 .crop-handle {
   position: absolute;
+  display: grid;
+  place-items: center;
+  pointer-events: auto;
+}
+
+.crop-handle-dot {
+  display: block;
   background: var(--accent);
   border: 1px solid #1a140c;
   border-style: solid;
-  pointer-events: auto;
 }
 
 .crop-handle.nw,

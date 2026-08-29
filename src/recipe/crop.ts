@@ -76,6 +76,30 @@ export function cropAffectsPixels(crop: Crop): boolean {
   return crop.enabled || crop.angle !== 0;
 }
 
+/**
+ * Zoom/pan that makes `crop` fill the viewport, as Lightroom does after a crop edit.
+ * Returns scale 1 and no offset when the crop already fills the frame.
+ */
+export function cropZoom(
+  crop: Crop,
+  previewW: number,
+  previewH: number,
+  hostW: number,
+  hostH: number,
+  pad = 32,
+): { scale: number; dx: number; dy: number } {
+  const none = { scale: 1, dx: 0, dy: 0 };
+  const frameW = crop.width * previewW;
+  const frameH = crop.height * previewH;
+  if (frameW < 1 || frameH < 1 || hostW < 1 || hostH < 1) return none;
+  const scale = Math.min(8, Math.max(1, Math.min((hostW - pad) / frameW, (hostH - pad) / frameH)));
+  return {
+    scale,
+    dx: previewW / 2 - (crop.x + crop.width / 2) * previewW,
+    dy: previewH / 2 - (crop.y + crop.height / 2) * previewH,
+  };
+}
+
 export function cropPixelSize(crop: Crop, imgW: number, imgH: number): { w: number; h: number } {
   if (!crop.enabled) return { w: imgW, h: imgH };
   return {

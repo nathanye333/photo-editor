@@ -6,7 +6,7 @@ import { photoThumbSrc } from "./catalog/media";
 import { emptyPhoto, loadPhotos, loadPresets, openCatalog, savePresetRow, upsertPhoto } from "./catalog/store";
 import { fileName, type Photo, type Preset } from "./catalog/types";
 import { fileExists, fileUrl, isTauri, pickFolder, pickSaveJpeg, scanFolder, writeFileBytes } from "./native";
-import { applyAspectPreset, defaultCrop, normalizeCrop } from "./recipe/crop";
+import { applyAspectPreset, cropZoom, defaultCrop, normalizeCrop } from "./recipe/crop";
 import { cloneRecipe, createBrushMask, createColorRangeMask, createLuminanceMask, createRadialMask, defaultRecipe } from "./recipe/defaults";
 import { pushHistory, redo, undo } from "./recipe/history";
 import { applyCatalogPatch, applyPatch } from "./recipe/patch";
@@ -219,8 +219,12 @@ export default function App() {
     const canvas = canvasRef.current;
     if (!host || !renderer) return;
     renderer.layout(view, host.clientWidth, host.clientHeight, cropToolActive);
-    setHostSize({ w: host.clientWidth, h: host.clientHeight });
-    if (canvas) setPreviewSize({ w: canvas.width, h: canvas.height });
+    const next = { w: host.clientWidth, h: host.clientHeight };
+    setHostSize((prev) => (prev.w === next.w && prev.h === next.h ? prev : next));
+    if (canvas) {
+      const size = { w: canvas.width, h: canvas.height };
+      setPreviewSize((prev) => (prev.w === size.w && prev.h === size.h ? prev : size));
+    }
   }, [view, cropToolActive]);
 
   useEffect(() => {
@@ -298,18 +302,10 @@ export default function App() {
 
   /** Zoom/pan so the committed crop fills the viewport, Lightroom-style. */
   const cropView = useMemo(() => {
-    const identity = { scale: 1, transform: "none" };
-    if (!cropToolActive || !cropFrame || !previewSize.w || !hostSize.w) return identity;
-    const pad = 32;
-    const frameW = cropFrame.width * previewSize.w;
-    const frameH = cropFrame.height * previewSize.h;
-    if (frameW < 1 || frameH < 1) return identity;
-    const scale = Math.min(
-      8,
-      Math.max(1, Math.min((hostSize.w - pad) / frameW, (hostSize.h - pad) / frameH)),
-    );
-    const dx = previewSize.w / 2 - (cropFrame.x + cropFrame.width / 2) * previewSize.w;
-    const dy = previewSize.h / 2 - (cropFrame.y + cropFrame.height / 2) * previewSize.h;
+    if (!cropToolActive || !cropFrame || !previewSize.w || !hostSize.w) {
+      return { scale: 1, transform: "none" };
+    }
+    const { scale, dx, dy } = cropZoom(cropFrame, previewSize.w, previewSize.h, hostSize.w, hostSize.h);
     return { scale, transform: `scale(${scale}) translate(${dx}px, ${dy}px)` };
   }, [cropToolActive, cropFrame, previewSize, hostSize]);
 
