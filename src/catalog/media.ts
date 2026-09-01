@@ -12,3 +12,8 @@ export function photoThumbSrc(photo: Photo): string | undefined {
   if (photo.thumbPath && isTauri()) return fileUrl(photo.thumbPath);
   return photoPreviewSrc(photo);
 }
+
+/** Best available preview for loupe / survey (full file when possible). */
+export function photoDisplaySrc(photo: Photo): string | undefined {
+  return photoPreviewSrc(photo) ?? photoThumbSrc(photo);
+}

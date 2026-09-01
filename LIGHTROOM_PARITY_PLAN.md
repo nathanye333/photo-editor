@@ -168,9 +168,9 @@ Lightroom's Library module is much richer than grid + filmstrip.
 
 ### Culling views
 
-- [ ] Loupe view with quick zoom
+- [x] Loupe view with quick zoom
 - [x] Compare view (two-up)
-- [ ] Survey view (multi-image grid cull)
+- [x] Survey view (multi-image grid cull)
 - [x] Auto-advance on pick / reject during cull
 
 ### Map
@@ -264,7 +264,7 @@ v1    ✅  Globals, library basics, agent, JPEG export
 v1.5  ~   Masks (brush, color, luma, radial shipped; linear/semantic next)
 v1.6  ✅  RAW decode + crop / transform
 v1.7  →   Color grading, lens profiles, full detail, point curve
-v2.0  ~   Keywords, compare cull, filters shipped; survey/loupe/map next
+v2.0  ~   Culling views shipped; smart collections + map next
 v2.x  →   XMP sidecars, batch export, export presets
 v3+   →   Spot heal, merge tools, tethering, print
 ```

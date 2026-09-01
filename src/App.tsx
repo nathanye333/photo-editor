@@ -21,7 +21,7 @@ import { AgentChat, SettingsModal, type ChatMsg } from "./ui/agentChat";
 import { HistogramView, Stars } from "./ui/controls";
 import { CropOverlay } from "./ui/crop";
 import { DevelopPanels } from "./ui/develop";
-import { Filmstrip, FolderList, LibraryGrid, MetaList, CollectionsList, SnapshotsList, LibraryToolbar, CompareView } from "./ui/library";
+import { Filmstrip, FolderList, LibraryGrid, MetaList, CollectionsList, SnapshotsList, LibraryToolbar, CompareView, LoupeView, SurveyView, nextLoupeZoom, type LibraryView, type LoupeZoom } from "./ui/library";
 import type { BrushToolSettings } from "./ui/masks";
 import { MaskOverlay } from "./ui/maskOverlay";
 import "./App.css";
@@ -88,7 +88,8 @@ export default function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settings, setSettings] = useState<AppSettings>(defaultSettingsSafe);
   const [status, setStatus] = useState("");
-  const [libraryView, setLibraryView] = useState<"grid" | "compare">("grid");
+  const [libraryView, setLibraryView] = useState<LibraryView>("grid");
+  const [loupeZoom, setLoupeZoom] = useState<LoupeZoom>("fit");
   const [librarySort, setLibrarySort] = useState<LibrarySort>("filename");
   const [libraryFilters, setLibraryFilters] = useState<LibraryFilters>(DEFAULT_LIBRARY_FILTERS);
   const [quickFilterActive, setQuickFilterActive] = useState(false);
@@ -584,7 +585,7 @@ export default function App() {
 
   function cullFlag(flag: Flag) {
     patchCatalog({ flag });
-    if (autoAdvance && mod === "library" && libraryView === "compare") {
+    if (autoAdvance && mod === "library" && libraryView !== "grid") {
       selectRelative(1);
     }
   }
@@ -653,7 +654,7 @@ export default function App() {
       const t = e.target as HTMLElement;
       if (t.tagName === "INPUT" || t.tagName === "TEXTAREA") return;
       if (e.key === "r" || e.key === "R") {
-        cropKeys.current.toggle();
+        if (mod === "develop") cropKeys.current.toggle();
         return;
       }
       if (cropKeys.current.active && (e.key === "Enter" || e.key === "Escape")) {
@@ -671,6 +672,30 @@ export default function App() {
         return;
       }
       if (mod === "library") {
+        if (e.key === "g" || e.key === "G") {
+          setLibraryView("grid");
+          return;
+        }
+        if (e.key === "c" || e.key === "C") {
+          setLibraryView("compare");
+          return;
+        }
+        if (e.key === "e" || e.key === "E") {
+          setLibraryView("loupe");
+          return;
+        }
+        if (e.key === "n" || e.key === "N") {
+          setLibraryView("survey");
+          return;
+        }
+        if ((e.key === "z" || e.key === "Z") && libraryView === "loupe") {
+          setLoupeZoom((z) => nextLoupeZoom(z));
+          return;
+        }
+        if (e.key === "Enter" && photoRef.current) {
+          setMod("develop");
+          return;
+        }
         const colorKeys: Record<string, NonNullable<CatalogPatch["colorLabel"]>> = {
           "6": "red",
           "7": "yellow",
@@ -688,7 +713,7 @@ export default function App() {
       }
       if (e.key >= "0" && e.key <= "5") {
         patchCatalog({ rating: Number(e.key) });
-        if (autoAdvance && mod === "library" && libraryView === "compare" && e.key !== "0") {
+        if (autoAdvance && mod === "library" && libraryView !== "grid" && e.key !== "0") {
           selectRelative(1);
         }
         return;
@@ -996,7 +1021,7 @@ export default function App() {
         ) : null}
       </aside>
 
-      <main className="center">
+      <main className={`center${mod === "library" ? " library-mode" : ""}`}>
         <div
           ref={hostRef}
           className={`preview-host${view === "1:1" ? " zoom" : ""}${
@@ -1059,7 +1084,7 @@ export default function App() {
           ) : null}
         </div>
         {mod === "library" ? (
-          <>
+          <div className="library-shell">
             <LibraryToolbar
               photos={photos}
               filters={libraryFilters}
@@ -1081,7 +1106,8 @@ export default function App() {
                   setMod("develop");
                 }}
               />
-            ) : (
+            ) : null}
+            {libraryView === "compare" ? (
               <CompareView
                 photos={visible}
                 selectedId={selectedId}
@@ -1089,8 +1115,27 @@ export default function App() {
                 onSelectSide={setCompareSide}
                 onSelectPhoto={setSelectedId}
               />
-            )}
-          </>
+            ) : null}
+            {libraryView === "loupe" ? (
+              <LoupeView
+                photo={photo}
+                zoom={loupeZoom}
+                onZoom={setLoupeZoom}
+                onOpen={() => setMod("develop")}
+              />
+            ) : null}
+            {libraryView === "survey" ? (
+              <SurveyView
+                photos={visible}
+                selectedId={selectedId}
+                onSelect={setSelectedId}
+                onOpen={(id) => {
+                  setSelectedId(id);
+                  setMod("develop");
+                }}
+              />
+            ) : null}
+          </div>
         ) : null}
       </main>
 

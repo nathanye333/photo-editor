@@ -8,9 +8,21 @@ import {
   uniqueLenses,
 } from "../catalog/filter";
 import { fileName, photoLabel, type Collection, type ColorLabel, type Photo } from "../catalog/types";
-import { photoThumbSrc } from "../catalog/media";
+import { photoDisplaySrc, photoThumbSrc } from "../catalog/media";
+
+export type LibraryView = "grid" | "compare" | "loupe" | "survey";
+export type LoupeZoom = "fit" | "100" | "200";
+
+const LOUPE_ZOOMS: LoupeZoom[] = ["fit", "100", "200"];
+
+const LOUPE_LABELS: Record<LoupeZoom, string> = { fit: "Fit", "100": "1:1", "200": "2:1" };
 
 export const COLOR_LABELS: ColorLabel[] = ["red", "yellow", "green", "blue", "purple"];
+
+export function nextLoupeZoom(current: LoupeZoom): LoupeZoom {
+  const i = LOUPE_ZOOMS.indexOf(current);
+  return LOUPE_ZOOMS[(i + 1) % LOUPE_ZOOMS.length];
+}
 
 export function colorLabelStyle(label: ColorLabel | null): CSSProperties | undefined {
   if (!label) return undefined;
@@ -114,15 +126,107 @@ export function CompareView(props: {
   );
 }
 
+function photoCaption(photo: Photo) {
+  return (
+    <>
+      {photoLabel(photo)}
+      {photo.rating > 0 ? ` · ${"★".repeat(photo.rating)}` : ""}
+      {photo.flag === "pick" ? " · P" : photo.flag === "reject" ? " · X" : ""}
+    </>
+  );
+}
+
+export function LoupeView(props: {
+  photo: Photo | null;
+  zoom: LoupeZoom;
+  onZoom: (zoom: LoupeZoom) => void;
+  onOpen: () => void;
+}) {
+  const { photo, zoom } = props;
+  if (!photo) return <div className="library-view loupe-view empty">No photo selected</div>;
+  const src = photoDisplaySrc(photo);
+  return (
+    <div className="library-view loupe-view">
+      <div className="loupe-toolbar">
+        <span className="loupe-cap">{photoCaption(photo)}</span>
+        <div className="loupe-zoom-btns">
+          {LOUPE_ZOOMS.map((z) => (
+            <button
+              key={z}
+              type="button"
+              className={zoom === z ? "on" : ""}
+              onClick={() => props.onZoom(z)}
+            >
+              {LOUPE_LABELS[z]}
+            </button>
+          ))}
+        </div>
+        <button type="button" className="btn-ghost" onClick={props.onOpen}>
+          Develop
+        </button>
+      </div>
+      <button type="button" className={`loupe-stage zoom-${zoom}`} onDoubleClick={props.onOpen}>
+        {src && !photo.missing ? (
+          <img src={src} alt={fileName(photo.path)} />
+        ) : (
+          <div className="cell-miss">{photo.kind === "raw" ? "RAW" : photo.missing ? "Missing" : "—"}</div>
+        )}
+      </button>
+    </div>
+  );
+}
+
+export function SurveyView(props: {
+  photos: Photo[];
+  selectedId: string | null;
+  onSelect: (id: string) => void;
+  onOpen: (id: string) => void;
+}) {
+  const index = Math.max(0, props.photos.findIndex((p) => p.id === props.selectedId));
+  const start = Math.max(0, index - 5);
+  const slice = props.photos.slice(start, start + 12);
+  if (!slice.length) return <div className="library-view survey-view empty">No photos</div>;
+
+  return (
+    <div className="library-view survey-view">
+      <p className="survey-hint">Click to select · P pick · X reject · arrows navigate</p>
+      <div className="survey-grid">
+        {slice.map((p) => {
+          const src = photoDisplaySrc(p);
+          return (
+            <button
+              key={p.id}
+              type="button"
+              className={`survey-cell${p.id === props.selectedId ? " sel" : ""}`}
+              onClick={() => props.onSelect(p.id)}
+              onDoubleClick={() => props.onOpen(p.id)}
+            >
+              <div className="cell-badges">
+                <CellBadge photo={p} />
+              </div>
+              {src && !p.missing ? (
+                <img src={src} alt={fileName(p.path)} />
+              ) : (
+                <div className="cell-miss">{p.kind === "raw" ? "RAW" : "?"}</div>
+              )}
+              <span className="cell-cap">{photoCaption(p)}</span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 export function LibraryToolbar(props: {
   photos: Photo[];
   filters: LibraryFilters;
   sort: LibrarySort;
-  libraryView: "grid" | "compare";
+  libraryView: LibraryView;
   autoAdvance: boolean;
   onFilters: (next: LibraryFilters) => void;
   onSort: (sort: LibrarySort) => void;
-  onView: (view: "grid" | "compare") => void;
+  onView: (view: LibraryView) => void;
   onAutoAdvance: (on: boolean) => void;
 }) {
   const cameras = uniqueCameras(props.photos);
@@ -229,6 +333,20 @@ export function LibraryToolbar(props: {
         onClick={() => props.onView("compare")}
       >
         Compare
+      </button>
+      <button
+        type="button"
+        className={props.libraryView === "loupe" ? "on" : ""}
+        onClick={() => props.onView("loupe")}
+      >
+        Loupe
+      </button>
+      <button
+        type="button"
+        className={props.libraryView === "survey" ? "on" : ""}
+        onClick={() => props.onView("survey")}
+      >
+        Survey
       </button>
       <label className="mask-check">
         <input
