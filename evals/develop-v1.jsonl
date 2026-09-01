@@ -26,3 +26,6 @@
 {"id":"film-grain","instruction":"add some film grain","expectedCategories":["optics"],"expectedPatch":{"globals":{"effects":{"grainAmount":30}}},"mode":"absolute"}
 {"id":"lens-profile","instruction":"correct the lens distortion on this wide shot","expectedCategories":["optics"],"expectedTool":"set_lens_profile"}
 {"id":"defringe","instruction":"remove the purple fringing on the branches","expectedCategories":["optics"],"expectedPatch":{"globals":{"optics":{"defringePurple":50}}},"mode":"absolute"}
+{"id":"auto-tone","instruction":"auto tone this shot","expectedCategories":["tone"],"expectedTool":"auto_tone"}
+{"id":"mono-profile","instruction":"make it black and white","expectedCategories":["tone","color"],"expectedTool":"set_camera_profile"}
+{"id":"calibration-primaries","instruction":"boost the blue primary in the calibration panel","expectedCategories":["color"],"expectedPatch":{"globals":{"calibration":{"blueSat":25}}},"mode":"absolute"}

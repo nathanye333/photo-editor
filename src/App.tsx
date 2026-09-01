@@ -8,6 +8,7 @@ import { fileName, type Photo, type Preset } from "./catalog/types";
 import { fileExists, fileUrl, isTauri, pickFolder, pickSaveJpeg, scanFolder, writeFileBytes } from "./native";
 import { applyAspectPreset, cropZoom, defaultCrop, normalizeCrop } from "./recipe/crop";
 import { cloneRecipe, createBrushMask, createColorRangeMask, createLuminanceMask, createRadialMask, defaultRecipe } from "./recipe/defaults";
+import { autoTone } from "./recipe/auto";
 import { pushHistory, redo, undo } from "./recipe/history";
 import { applyCatalogPatch, applyPatch } from "./recipe/patch";
 import type { BrushStroke, CatalogPatch, Crop, CropAspect, CropPatch, EditRecipe, Flag, GlobalsPatch, Mask } from "./recipe/types";
@@ -546,8 +547,17 @@ export default function App() {
     return `Applied ${preset.name}`;
   }
 
+  function applyAutoTone(): string {
+    const stats = rendererRef.current?.sourceStats();
+    if (!stats) return "No image loaded";
+    const patch = autoTone(stats);
+    commitRecipe(applyPatch(photoRef.current?.recipe ?? defaultRecipe(), { globals: patch }, "absolute"));
+    return `Auto tone: exposure ${patch.exposure} EV, contrast ${patch.contrast}`;
+  }
+
   const agentActions: AgentActions = {
     getRecipe: () => photoRef.current?.recipe ?? defaultRecipe(),
+    autoTone: applyAutoTone,
     patchDevelop: (patch, mode = "delta") =>
       commitRecipe(applyPatch(photoRef.current?.recipe ?? defaultRecipe(), patch, mode)),
     patchCatalog,
@@ -883,6 +893,7 @@ export default function App() {
             onRemoveMask={removeSelectedMask}
             onLiveMask={liveMask}
             onBrushTool={(next) => setBrushTool((t) => ({ ...t, ...next }))}
+            onAutoTone={() => setStatus(applyAutoTone())}
           />
         ) : null}
       </aside>

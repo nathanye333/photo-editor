@@ -470,6 +470,12 @@ h3 {
   margin-top: 0;
 }
 
+.panel-actions {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
 .select {
   display: flex;
   align-items: center;

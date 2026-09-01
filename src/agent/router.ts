@@ -21,6 +21,8 @@ const KEYWORDS: Record<ToolCategory, string[]> = {
     "stop",
     "lift",
     "crush",
+    "auto",
+    "fix this",
     "curve",
     "fade",
     "matte",
@@ -38,6 +40,10 @@ const KEYWORDS: Record<ToolCategory, string[]> = {
     "orange",
     "skin",
     "color",
+    "calibration",
+    "profile",
+    "monochrome",
+    "black and white",
     "split tone",
     "grade",
     "grading",
@@ -95,9 +101,9 @@ const KEYWORDS: Record<ToolCategory, string[]> = {
 
 export const CATEGORY_DOCS: Record<ToolCategory, string> = {
   tone:
-    "Tone: exposure (EV), contrast, highlights, shadows, whites, blacks, and parametric toneCurve via apply_develop_patch deltas. For an S-curve, a matte fade, or a per-channel cast use set_tone_curve_points (channel rgb|red|green|blue).",
+    "Tone: exposure (EV), contrast, highlights, shadows, whites, blacks, and parametric toneCurve via apply_develop_patch deltas. auto_tone sets a whole tone starting point from the image itself. For an S-curve, a matte fade, or a per-channel cast use set_tone_curve_points (channel rgb|red|green|blue).",
   color:
-    "Color: temp/tint (-100..100), vibrance, saturation, hsl.{red,orange,yellow,green,aqua,blue,purple,magenta}.{hue,sat,lum}. For split toning or a cinematic look use apply_color_grading (shadows/midtones/highlights wheels with hue 0-360, sat 0-100, lum -100..100, plus blending and balance).",
+    "Color: temp/tint (-100..100), vibrance, saturation, hsl.{red,orange,yellow,green,aqua,blue,purple,magenta}.{hue,sat,lum}. For split toning or a cinematic look use apply_color_grading (shadows/midtones/highlights wheels with hue 0-360, sat 0-100, lum -100..100, plus blending and balance). set_camera_profile switches the base rendering (color/portrait/landscape/neutral/mono) and calibration.{shadowTint,red|green|blueHue,red|green|blueSat} tweaks the primaries.",
   detail:
     "Detail/presence: texture (fine), clarity (mid), dehaze; sharpening with sharpenRadius/sharpenDetail/sharpenMasking; noiseReduction (luminance) with noiseReductionDetail, plus colorNoiseReduction and moire. Raise sharpenMasking to keep sharpening off skin; negative texture smooths it.",
   optics:

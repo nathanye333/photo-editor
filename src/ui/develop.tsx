@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { GRADE_ZONES, HSL_CHANNELS, RANGES, type Crop, type CropAspect, type CropPatch, type EditRecipe, type Effects, type GlobalsPatch, type HslChannel, type Mask, type Optics } from "../recipe/types";
+import { GRADE_ZONES, HSL_CHANNELS, RANGES, type Calibration, type Crop, type CropAspect, type CropPatch, type EditRecipe, type Effects, type GlobalsPatch, type HslChannel, type Mask, type Optics } from "../recipe/types";
+import { CAMERA_PROFILES } from "../render/cameraProfiles";
 import { LENS_PROFILES } from "../render/lensProfiles";
 import { Panel, Select, Slider } from "./controls";
 import { GeometryPanel } from "./crop";
@@ -31,6 +32,7 @@ type Props = {
   onRemoveMask: () => void;
   onLiveMask: (mask: Mask) => void;
   onBrushTool: (next: Partial<BrushToolSettings>) => void;
+  onAutoTone: () => void;
 };
 
 export function DevelopPanels({
@@ -57,6 +59,7 @@ export function DevelopPanels({
   onRemoveMask,
   onLiveMask,
   onBrushTool,
+  onAutoTone,
 }: Props) {
   const [hslCh, setHslCh] = useState<HslChannel>("orange");
   const g = recipe.globals;
@@ -78,6 +81,22 @@ export function DevelopPanels({
       onCommit={onCommit}
       onReset={() => {
         onLive({ [key]: 0 });
+        onCommit();
+      }}
+    />
+  );
+
+  const calib = (key: keyof Omit<Calibration, "profile">, label: string, range: readonly [number, number]) => (
+    <Slider
+      label={label}
+      value={g.calibration[key]}
+      min={range[0]}
+      max={range[1]}
+      step={1}
+      onChange={(v) => onLive({ calibration: { [key]: v } })}
+      onCommit={onCommit}
+      onReset={() => {
+        onLive({ calibration: { [key]: 0 } });
         onCommit();
       }}
     />
@@ -129,6 +148,11 @@ export function DevelopPanels({
   return (
     <>
       <Panel {...panel("basic", "Basic")}>
+        <div className="panel-actions">
+          <button type="button" className="btn-ghost" onClick={onAutoTone}>
+            Auto tone
+          </button>
+        </div>
         {num("exposure", "Exposure", RANGES.exposure, 0.05)}
         {num("contrast", "Contrast", RANGES.contrast, 1)}
         {num("highlights", "Highlights", RANGES.highlights, 1)}
@@ -281,6 +305,27 @@ export function DevelopPanels({
         onCommit={onCommit}
         onBrushTool={onBrushTool}
       />
+      <Panel {...panel("calibration", "Calibration")}>
+        <Select
+          label="Profile"
+          value={g.calibration.profile}
+          options={CAMERA_PROFILES.map((p) => ({ value: p.id, label: p.name }))}
+          onChange={(profile) => {
+            onLive({ calibration: { profile } });
+            onCommit();
+          }}
+        />
+        {calib("shadowTint", "Shadow tint", RANGES.shadowTint)}
+        <p className="group-label">Red primary</p>
+        {calib("redHue", "Hue", RANGES.primaryHue)}
+        {calib("redSat", "Saturation", RANGES.primarySat)}
+        <p className="group-label">Green primary</p>
+        {calib("greenHue", "Hue", RANGES.primaryHue)}
+        {calib("greenSat", "Saturation", RANGES.primarySat)}
+        <p className="group-label">Blue primary</p>
+        {calib("blueHue", "Hue", RANGES.primaryHue)}
+        {calib("blueSat", "Saturation", RANGES.primarySat)}
+      </Panel>
       <Panel {...panel("optics", "Optics")}>
         <Select
           label="Profile"

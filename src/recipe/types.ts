@@ -39,6 +39,18 @@ export type ToneCurve = {
   channels: CurveChannels;
 };
 
+/** Camera profile plus Lightroom-style primary calibration. */
+export type Calibration = {
+  profile: string;
+  shadowTint: number;
+  redHue: number;
+  redSat: number;
+  greenHue: number;
+  greenSat: number;
+  blueHue: number;
+  blueSat: number;
+};
+
 export type Optics = {
   /** Lens profile id, or "" for none. Auto-matched from EXIF on import. */
   profileId: string;
@@ -116,6 +128,7 @@ export type Globals = {
   noiseReductionDetail: number;
   colorNoiseReduction: number;
   moire: number;
+  calibration: Calibration;
   optics: Optics;
   effects: Effects;
   /** @deprecated Superseded by the optics group — kept for legacy recipes. */
@@ -189,10 +202,11 @@ export type ColorGradingPatch = Partial<
 >;
 
 export type GlobalsPatch = Partial<
-  Omit<Globals, "hsl" | "toneCurve" | "colorGrading" | "optics" | "effects"> & {
+  Omit<Globals, "hsl" | "toneCurve" | "colorGrading" | "calibration" | "optics" | "effects"> & {
     hsl?: HslPatch;
     toneCurve?: ToneCurvePatch;
     colorGrading?: ColorGradingPatch;
+    calibration?: Partial<Calibration>;
     optics?: Partial<Optics>;
     effects?: Partial<Effects>;
   }
@@ -257,6 +271,9 @@ export const RANGES = {
   noiseReductionDetail: [0, 100],
   colorNoiseReduction: [0, 100],
   moire: [0, 100],
+  shadowTint: [-100, 100],
+  primaryHue: [-100, 100],
+  primarySat: [-100, 100],
   distortion: [-100, 100],
   ca: [0, 100],
   defringe: [0, 100],
@@ -277,6 +294,19 @@ export const RANGES = {
   brushOpacity: [1, 100],
   rangeUnit: [0, 1],
 } as const;
+
+/** True when only the camera profile is in play, so the shader can skip the stage. */
+export function isNeutralCalibration(cal: Calibration): boolean {
+  return (
+    cal.shadowTint === 0 &&
+    cal.redHue === 0 &&
+    cal.redSat === 0 &&
+    cal.greenHue === 0 &&
+    cal.greenSat === 0 &&
+    cal.blueHue === 0 &&
+    cal.blueSat === 0
+  );
+}
 
 /** Blending and balance alone do nothing while every wheel is neutral. */
 export function isNeutralGrading(grading: ColorGrading): boolean {
