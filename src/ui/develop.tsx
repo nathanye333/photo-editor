@@ -1,8 +1,9 @@
 import { useState } from "react";
-import { HSL_CHANNELS, RANGES, type Crop, type CropAspect, type CropPatch, type EditRecipe, type GlobalsPatch, type HslChannel, type Mask } from "../recipe/types";
+import { GRADE_ZONES, HSL_CHANNELS, RANGES, type Crop, type CropAspect, type CropPatch, type EditRecipe, type GlobalsPatch, type HslChannel, type Mask } from "../recipe/types";
 import { Panel, Slider } from "./controls";
 import { GeometryPanel } from "./crop";
 import { CurveEditor } from "./curve";
+import { ColorWheel } from "./wheel";
 import { MasksPanel, type BrushToolSettings } from "./masks";
 
 type Props = {
@@ -152,7 +153,61 @@ export function DevelopPanels({
           />
         ))}
       </Panel>
-      <Panel {...panel("grade", "Color Grading")} stub="Global wheels land after v1. Use Temp/Tint and HSL for now." />
+      <Panel {...panel("grade", "Color Grading")}>
+        <div className="wheels">
+          {GRADE_ZONES.map((zone) => (
+            <ColorWheel
+              key={zone}
+              label={zone}
+              wheel={g.colorGrading[zone]}
+              onLive={(next) => onLive({ colorGrading: { [zone]: next } })}
+              onCommit={onCommit}
+            />
+          ))}
+        </div>
+        {GRADE_ZONES.map((zone) => (
+          <Slider
+            key={zone}
+            label={`${zone[0].toUpperCase() + zone.slice(1)} lum`}
+            value={g.colorGrading[zone].lum}
+            min={RANGES.gradeLum[0]}
+            max={RANGES.gradeLum[1]}
+            step={1}
+            onChange={(v) => onLive({ colorGrading: { [zone]: { lum: v } } })}
+            onCommit={onCommit}
+            onReset={() => {
+              onLive({ colorGrading: { [zone]: { lum: 0 } } });
+              onCommit();
+            }}
+          />
+        ))}
+        <Slider
+          label="Blending"
+          value={g.colorGrading.blending}
+          min={RANGES.gradeBlending[0]}
+          max={RANGES.gradeBlending[1]}
+          step={1}
+          onChange={(v) => onLive({ colorGrading: { blending: v } })}
+          onCommit={onCommit}
+          onReset={() => {
+            onLive({ colorGrading: { blending: 50 } });
+            onCommit();
+          }}
+        />
+        <Slider
+          label="Balance"
+          value={g.colorGrading.balance}
+          min={RANGES.gradeBalance[0]}
+          max={RANGES.gradeBalance[1]}
+          step={1}
+          onChange={(v) => onLive({ colorGrading: { balance: v } })}
+          onCommit={onCommit}
+          onReset={() => {
+            onLive({ colorGrading: { balance: 0 } });
+            onCommit();
+          }}
+        />
+      </Panel>
       <Panel {...panel("detail", "Detail")}>
         <p className="group-label">Sharpening</p>
         {num("sharpening", "Amount", RANGES.sharpening, 1)}

@@ -3,6 +3,7 @@ import { identityPoints } from "./curve";
 import { defaultGlobals, defaultRecipe } from "./defaults";
 import {
   CURVE_CHANNELS,
+  GRADE_ZONES,
   HSL_CHANNELS,
   MAX_CURVE_POINTS,
   MAX_MASKS,
@@ -10,6 +11,8 @@ import {
   RECIPE_VERSION,
   type BrushStroke,
   type CatalogPatch,
+  type ColorGrading,
+  type ColorGradingPatch,
   type Crop,
   type CropPatch,
   type CurveChannels,
@@ -98,6 +101,33 @@ function applyCurveChannels(
   return next;
 }
 
+function applyColorGrading(
+  current: ColorGrading,
+  patch: ColorGradingPatch | undefined,
+  mode: PatchMode,
+): ColorGrading {
+  const next = {
+    blending: applyScalar(current.blending, patch?.blending, mode, RANGES.gradeBlending),
+    balance: applyScalar(current.balance, patch?.balance, mode, RANGES.gradeBalance),
+  } as ColorGrading;
+  for (const zone of GRADE_ZONES) {
+    const cur = current[zone];
+    const p = patch?.[zone];
+    next[zone] = {
+      // Hue is circular, so it wraps instead of clamping at the ends.
+      hue: wrapHue(p?.hue === undefined ? cur.hue : mode === "delta" ? cur.hue + p.hue : p.hue),
+      sat: applyScalar(cur.sat, p?.sat, mode, RANGES.gradeSat),
+      lum: applyScalar(cur.lum, p?.lum, mode, RANGES.gradeLum),
+    };
+  }
+  return next;
+}
+
+function wrapHue(hue: number): number {
+  if (!Number.isFinite(hue)) return 0;
+  return ((hue % 360) + 360) % 360;
+}
+
 export function normalizePoints(points: CurvePoints | undefined): CurvePoints {
   if (!Array.isArray(points)) return identityPoints();
   const pts = points
@@ -136,6 +166,11 @@ function applyGlobals(current: Globals, patch: GlobalsPatch | undefined, mode: P
     saturation: applyScalar(g.saturation, p.saturation, mode, RANGES.saturation),
     hsl: applyHsl(g.hsl, p.hsl, mode),
     toneCurve: applyCurve(g.toneCurve, p.toneCurve, mode),
+    colorGrading: applyColorGrading(
+      g.colorGrading ?? defaultGlobals().colorGrading,
+      p.colorGrading,
+      mode,
+    ),
     texture: applyScalar(g.texture, p.texture, mode, RANGES.texture),
     clarity: applyScalar(g.clarity, p.clarity, mode, RANGES.clarity),
     dehaze: applyScalar(g.dehaze, p.dehaze, mode, RANGES.dehaze),
@@ -167,7 +202,7 @@ function clampMaskParams(params: Partial<Globals> | undefined): Partial<Globals>
   const patch = params as GlobalsPatch;
   const full = applyGlobals(defaultGlobals(), patch, "absolute");
   const out: Partial<Globals> = {};
-  const scalars: (keyof Omit<Globals, "hsl" | "toneCurve">)[] = [
+  const scalars: (keyof Omit<Globals, "hsl" | "toneCurve" | "colorGrading">)[] = [
     "exposure",
     "contrast",
     "highlights",

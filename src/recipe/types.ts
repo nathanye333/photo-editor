@@ -39,6 +39,24 @@ export type ToneCurve = {
   channels: CurveChannels;
 };
 
+export const GRADE_ZONES = ["shadows", "midtones", "highlights"] as const;
+
+export type GradeZone = (typeof GRADE_ZONES)[number];
+
+/** One colour-grading wheel: hue in degrees, saturation 0–100, luminance -100–100. */
+export type GradeWheel = {
+  hue: number;
+  sat: number;
+  lum: number;
+};
+
+export type ColorGrading = Record<GradeZone, GradeWheel> & {
+  /** Zone overlap, 0 = hard split, 100 = wide crossfade. */
+  blending: number;
+  /** Shifts the shadow/highlight split point. */
+  balance: number;
+};
+
 export type CropAspect = "original" | "1:1" | "4:5" | "16:9" | "custom";
 
 /** Normalized crop on source image (origin top-left). Applied in preview + export. */
@@ -66,6 +84,7 @@ export type Globals = {
   saturation: number;
   hsl: Record<HslChannel, HslAdjust>;
   toneCurve: ToneCurve;
+  colorGrading: ColorGrading;
   texture: number;
   clarity: number;
   dehaze: number;
@@ -143,10 +162,15 @@ export type ToneCurvePatch = Partial<
   Omit<ToneCurve, "channels"> & { channels: Partial<CurveChannels> }
 >;
 
+export type ColorGradingPatch = Partial<
+  Record<GradeZone, Partial<GradeWheel>> & { blending: number; balance: number }
+>;
+
 export type GlobalsPatch = Partial<
-  Omit<Globals, "hsl" | "toneCurve"> & {
+  Omit<Globals, "hsl" | "toneCurve" | "colorGrading"> & {
     hsl?: HslPatch;
     toneCurve?: ToneCurvePatch;
+    colorGrading?: ColorGradingPatch;
   }
 >;
 
@@ -193,6 +217,11 @@ export const RANGES = {
   hslSat: [-100, 100],
   hslLum: [-100, 100],
   curve: [-100, 100],
+  gradeHue: [0, 360],
+  gradeSat: [0, 100],
+  gradeLum: [-100, 100],
+  gradeBlending: [0, 100],
+  gradeBalance: [-100, 100],
   texture: [-100, 100],
   clarity: [-100, 100],
   dehaze: [-100, 100],
@@ -216,6 +245,11 @@ export const RANGES = {
   brushOpacity: [1, 100],
   rangeUnit: [0, 1],
 } as const;
+
+/** Blending and balance alone do nothing while every wheel is neutral. */
+export function isNeutralGrading(grading: ColorGrading): boolean {
+  return GRADE_ZONES.every((zone) => grading[zone].sat === 0 && grading[zone].lum === 0);
+}
 
 export function primaryComponent(mask: Mask): MaskComponent | null {
   return mask.components[0] ?? null;

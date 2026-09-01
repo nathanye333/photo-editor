@@ -30,6 +30,11 @@ const KEYWORDS: Record<ToolCategory, string[]> = {
     "orange",
     "skin",
     "color",
+    "split tone",
+    "grade",
+    "grading",
+    "teal",
+    "cinematic",
   ],
   detail: [
     "sharp",
@@ -72,7 +77,7 @@ export const CATEGORY_DOCS: Record<ToolCategory, string> = {
   tone:
     "Tone: exposure (EV), contrast, highlights, shadows, whites, blacks, and parametric toneCurve via apply_develop_patch deltas. For an S-curve, a matte fade, or a per-channel cast use set_tone_curve_points (channel rgb|red|green|blue).",
   color:
-    "Color: temp/tint (-100..100), vibrance, saturation, hsl.{red,orange,yellow,green,aqua,blue,purple,magenta}.{hue,sat,lum}.",
+    "Color: temp/tint (-100..100), vibrance, saturation, hsl.{red,orange,yellow,green,aqua,blue,purple,magenta}.{hue,sat,lum}. For split toning or a cinematic look use apply_color_grading (shadows/midtones/highlights wheels with hue 0-360, sat 0-100, lum -100..100, plus blending and balance).",
   detail:
     "Detail/presence: texture (fine), clarity (mid), dehaze; sharpening with sharpenRadius/sharpenDetail/sharpenMasking; noiseReduction (luminance) with noiseReductionDetail, plus colorNoiseReduction and moire. Raise sharpenMasking to keep sharpening off skin; negative texture smooths it.",
   catalog: "Catalog: apply_catalog_patch with rating 0-5 and flag pick|reject|unflagged.",

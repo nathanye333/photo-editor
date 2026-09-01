@@ -107,9 +107,9 @@ Fill out panels that exist as stubs or single sliders.
 
 ### Color grading
 
-- [ ] Global shadow / midtone / highlight wheels
-- [ ] Blending and balance controls
-- [ ] Renderer support for grading LUT or equivalent
+- [x] Global shadow / midtone / highlight wheels
+- [x] Blending and balance controls
+- [x] Renderer support for grading LUT or equivalent (per-zone tint weighted by luminance)
 
 ### Optics
 

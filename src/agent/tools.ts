@@ -14,6 +14,7 @@ import {
   type EditRecipe,
   type Flag,
   type Mask,
+  type PatchMode,
 } from "../recipe/types";
 
 const hslChannel = z.object({
@@ -31,6 +32,12 @@ const hslPatch = z.object({
   blue: hslChannel.optional(),
   purple: hslChannel.optional(),
   magenta: hslChannel.optional(),
+});
+
+const gradeWheel = z.object({
+  hue: z.number().min(0).max(360).optional(),
+  sat: z.number().min(0).max(100).optional(),
+  lum: z.number().min(-100).max(100).optional(),
 });
 
 const maskParamsSchema = z.object({
@@ -63,7 +70,8 @@ function summarizeMasks(masks: Mask[]) {
 
 export type AgentActions = {
   getRecipe: () => EditRecipe;
-  patchDevelop: (patch: DevelopPatch) => EditRecipe;
+  /** Defaults to delta so tone tools stay iterative; absolute for set-value tools. */
+  patchDevelop: (patch: DevelopPatch, mode?: PatchMode) => EditRecipe;
   patchCatalog: (patch: CatalogPatch) => { rating: number; flag: Flag };
   applyPreset: (name: string) => string;
   copySettings: () => void;
@@ -112,6 +120,21 @@ export function createAgentTools(actions: AgentActions) {
         return { ok: true, globals: recipe.globals };
       },
     }),
+    apply_color_grading: tool({
+      description:
+        "Tint the shadows, midtones and highlights independently (split toning). hue is 0-360 degrees, sat 0-100, lum -100..100. blending widens the overlap between zones, balance shifts the shadow/highlight split. Values are absolute, not deltas. Classic teal-and-orange is shadows hue ~200 and highlights hue ~35.",
+      inputSchema: z.object({
+        shadows: gradeWheel.optional(),
+        midtones: gradeWheel.optional(),
+        highlights: gradeWheel.optional(),
+        blending: z.number().min(0).max(100).optional(),
+        balance: z.number().min(-100).max(100).optional(),
+      }),
+      execute: async (input) => {
+        const recipe = actions.patchDevelop({ globals: { colorGrading: input } }, "absolute");
+        return { ok: true, colorGrading: recipe.globals.colorGrading };
+      },
+    }),
     set_tone_curve_points: tool({
       description:
         "Replace the point curve for one channel. Points are [input, output] pairs in 0–1 (origin bottom-left); include both endpoints. Use rgb for a composite S-curve or fade, red/green/blue for colour casts.",
@@ -123,9 +146,10 @@ export function createAgentTools(actions: AgentActions) {
           .max(16),
       }),
       execute: async ({ channel, points }) => {
-        const recipe = actions.patchDevelop({
-          globals: { toneCurve: { channels: { [channel]: points as CurvePoints } } },
-        });
+        const recipe = actions.patchDevelop(
+          { globals: { toneCurve: { channels: { [channel]: points as CurvePoints } } } },
+          "absolute",
+        );
         return { ok: true, channels: recipe.globals.toneCurve.channels };
       },
     }),
