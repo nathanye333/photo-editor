@@ -16,6 +16,7 @@ import {
   type Mask,
   type PatchMode,
 } from "../recipe/types";
+import { LENS_PROFILES } from "../render/lensProfiles";
 
 const hslChannel = z.object({
   hue: z.number().optional(),
@@ -105,6 +106,23 @@ export function createAgentTools(actions: AgentActions) {
         noiseReductionDetail: z.number().optional().describe("Restores fine structure lost to luminance NR"),
         colorNoiseReduction: z.number().optional(),
         moire: z.number().optional(),
+        optics: z
+          .object({
+            distortion: z.number().optional(),
+            ca: z.number().optional().describe("Chromatic aberration removal 0-100"),
+            defringePurple: z.number().optional(),
+            defringeGreen: z.number().optional(),
+          })
+          .optional(),
+        effects: z
+          .object({
+            vignetteAmount: z.number().optional().describe("Negative darkens corners, positive brightens"),
+            vignetteMidpoint: z.number().optional(),
+            grainAmount: z.number().optional(),
+            grainSize: z.number().optional(),
+            grainRoughness: z.number().optional(),
+          })
+          .optional(),
         hsl: hslPatch.optional(),
         toneCurve: z
           .object({
@@ -118,6 +136,21 @@ export function createAgentTools(actions: AgentActions) {
       execute: async (input) => {
         const recipe = actions.patchDevelop({ globals: input });
         return { ok: true, globals: recipe.globals };
+      },
+    }),
+    set_lens_profile: tool({
+      description:
+        "Apply a built-in lens profile (distortion, corner falloff and CA correction) by id, or pass an empty id to remove it. Profiles are auto-matched from EXIF on import, so only change this when the match is wrong.",
+      inputSchema: z.object({
+        profileId: z.enum(["", ...LENS_PROFILES.map((p) => p.id)] as [string, ...string[]]),
+      }),
+      execute: async ({ profileId }) => {
+        const recipe = actions.patchDevelop({ globals: { optics: { profileId } } }, "absolute");
+        return {
+          ok: true,
+          optics: recipe.globals.optics,
+          available: LENS_PROFILES.map((p) => ({ id: p.id, name: p.name })),
+        };
       },
     }),
     apply_color_grading: tool({

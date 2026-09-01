@@ -16,6 +16,7 @@ import {
   type ToneCurve,
 } from "../recipe/types";
 import { rasterizeBrushStrokes, rgbToHueChroma } from "./brushRaster";
+import { lensProfile } from "./lensProfiles";
 import {
   BLIT_FRAG,
   FRAG,
@@ -380,6 +381,17 @@ export class PreviewRenderer {
     gl.uniform1f(loc(gl, program, "uNRDetail"), g.noiseReductionDetail);
     gl.uniform1f(loc(gl, program, "uColorNR"), g.colorNoiseReduction);
     gl.uniform1f(loc(gl, program, "uMoire"), g.moire);
+    const profile = lensProfile(g.optics.profileId);
+    gl.uniform1f(loc(gl, program, "uDistortion"), (profile?.distortion ?? 0) + g.optics.distortion);
+    gl.uniform1f(loc(gl, program, "uCA"), Math.max(profile?.ca ?? 0, g.optics.ca));
+    gl.uniform1f(loc(gl, program, "uDefringeP"), g.optics.defringePurple);
+    gl.uniform1f(loc(gl, program, "uDefringeG"), g.optics.defringeGreen);
+    gl.uniform1f(loc(gl, program, "uProfileVignette"), profile?.vignette ?? 0);
+    gl.uniform1f(loc(gl, program, "uVignette"), g.effects.vignetteAmount);
+    gl.uniform1f(loc(gl, program, "uVignetteMid"), g.effects.vignetteMidpoint);
+    gl.uniform1f(loc(gl, program, "uGrainAmount"), g.effects.grainAmount);
+    gl.uniform1f(loc(gl, program, "uGrainSize"), g.effects.grainSize);
+    gl.uniform1f(loc(gl, program, "uGrainRough"), g.effects.grainRoughness);
     this.setCropUniforms(program, crop);
   }
 

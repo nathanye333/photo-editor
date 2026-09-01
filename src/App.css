@@ -470,6 +470,25 @@ h3 {
   margin-top: 0;
 }
 
+.select {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 4px 0 8px;
+}
+
+.select select {
+  flex: 1;
+  min-width: 0;
+  background: #141416;
+  color: inherit;
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  padding: 3px 4px;
+  font: inherit;
+  font-size: 11px;
+}
+
 .wheels {
   display: flex;
   gap: 6px;

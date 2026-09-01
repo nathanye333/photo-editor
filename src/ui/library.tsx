@@ -91,12 +91,36 @@ export function FolderList(props: {
 }
 
 export function MetaList({ photo }: { photo: Photo }) {
+  const exposure = [photo.exif.ExposureTime, photo.exif.FNumber, photo.exif.ISO && `ISO ${photo.exif.ISO}`]
+    .filter(Boolean)
+    .join(" · ");
   return (
     <dl className="meta">
       <dt>File</dt>
       <dd>{fileName(photo.path)}</dd>
       <dt>Size</dt>
       <dd>{photo.width && photo.height ? `${photo.width} × ${photo.height}` : "—"}</dd>
+      {photo.exif.Model ? (
+        <>
+          <dt>Camera</dt>
+          <dd>{photo.exif.Model}</dd>
+        </>
+      ) : null}
+      {photo.exif.LensModel ? (
+        <>
+          <dt>Lens</dt>
+          <dd>
+            {photo.exif.LensModel}
+            {photo.exif.FocalLength ? ` @ ${photo.exif.FocalLength}` : ""}
+          </dd>
+        </>
+      ) : null}
+      {exposure ? (
+        <>
+          <dt>Exposure</dt>
+          <dd>{exposure}</dd>
+        </>
+      ) : null}
       <dt>Flag</dt>
       <dd>{photo.flag}</dd>
       <dt>Rating</dt>

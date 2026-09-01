@@ -39,6 +39,26 @@ export type ToneCurve = {
   channels: CurveChannels;
 };
 
+export type Optics = {
+  /** Lens profile id, or "" for none. Auto-matched from EXIF on import. */
+  profileId: string;
+  /** Manual distortion correction on top of the profile. */
+  distortion: number;
+  /** Lateral chromatic aberration removal. */
+  ca: number;
+  defringePurple: number;
+  defringeGreen: number;
+};
+
+export type Effects = {
+  /** Negative darkens the corners, positive brightens, as in Lightroom. */
+  vignetteAmount: number;
+  vignetteMidpoint: number;
+  grainAmount: number;
+  grainSize: number;
+  grainRoughness: number;
+};
+
 export const GRADE_ZONES = ["shadows", "midtones", "highlights"] as const;
 
 export type GradeZone = (typeof GRADE_ZONES)[number];
@@ -96,7 +116,9 @@ export type Globals = {
   noiseReductionDetail: number;
   colorNoiseReduction: number;
   moire: number;
-  /** Placeholder 0–100; unused in v1 renderer. */
+  optics: Optics;
+  effects: Effects;
+  /** @deprecated Superseded by the optics group — kept for legacy recipes. */
   lensCorrection: number;
   /** @deprecated Use recipe.crop.angle — kept for legacy recipes. */
   cropAngle: number;
@@ -167,10 +189,12 @@ export type ColorGradingPatch = Partial<
 >;
 
 export type GlobalsPatch = Partial<
-  Omit<Globals, "hsl" | "toneCurve" | "colorGrading"> & {
+  Omit<Globals, "hsl" | "toneCurve" | "colorGrading" | "optics" | "effects"> & {
     hsl?: HslPatch;
     toneCurve?: ToneCurvePatch;
     colorGrading?: ColorGradingPatch;
+    optics?: Partial<Optics>;
+    effects?: Partial<Effects>;
   }
 >;
 
@@ -233,6 +257,14 @@ export const RANGES = {
   noiseReductionDetail: [0, 100],
   colorNoiseReduction: [0, 100],
   moire: [0, 100],
+  distortion: [-100, 100],
+  ca: [0, 100],
+  defringe: [0, 100],
+  vignetteAmount: [-100, 100],
+  vignetteMidpoint: [0, 100],
+  grainAmount: [0, 100],
+  grainSize: [0, 100],
+  grainRoughness: [0, 100],
   lensCorrection: [0, 100],
   cropAngle: [-45, 45],
   rating: [0, 5],

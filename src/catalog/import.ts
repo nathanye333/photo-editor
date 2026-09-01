@@ -1,19 +1,39 @@
 import { applyPatch } from "../recipe/patch";
 import { bitmapFromBlob, bitmapFromRgb, thumbnailFromBitmap } from "../render/preview";
+import { matchLensProfile } from "../render/lensProfiles";
 import { decodeRaw, fileExists, fileUrl, isTauri, writeThumb, type ScannedFile } from "../native";
+import { parseExif, type ExifData } from "./exif";
 import { emptyPhoto, upsertPhoto } from "./store";
 import { fileName, folderOf, photoId, type Photo } from "./types";
 
-function meta(photo: Photo): Photo {
+function meta(photo: Photo, tags: Record<string, string> = {}): Photo {
+  const exif = {
+    file: fileName(photo.path),
+    width: String(photo.width || ""),
+    height: String(photo.height || ""),
+    mtime: photo.mtime ? new Date(photo.mtime * 1000).toISOString() : "",
+    ...tags,
+  };
+  const profile = matchLensProfile(exif);
   return {
     ...photo,
-    exif: {
-      file: fileName(photo.path),
-      width: String(photo.width || ""),
-      height: String(photo.height || ""),
-      mtime: photo.mtime ? new Date(photo.mtime * 1000).toISOString() : "",
-    },
+    exif,
+    recipe: profile
+      ? applyPatch(photo.recipe, { globals: { optics: { profileId: profile.id } } })
+      : photo.recipe,
   };
+}
+
+/** EXIF lives in the first few KB; reading the whole raw file would be wasteful. */
+const EXIF_HEAD_BYTES = 256 * 1024;
+
+async function readExifTags(blob: Blob): Promise<ExifData> {
+  try {
+    const head = await blob.slice(0, EXIF_HEAD_BYTES).arrayBuffer();
+    return parseExif(new Uint8Array(head));
+  } catch {
+    return { tags: {} };
+  }
 }
 
 async function ingestBitmap(photo: Photo, blob: Blob): Promise<Photo> {
@@ -30,11 +50,16 @@ async function ingestBitmap(photo: Photo, blob: Blob): Promise<Photo> {
   } finally {
     bmp.close();
   }
-  return meta(photo);
+  const exif = await readExifTags(blob);
+  return meta(photo, exif.tags);
 }
 
 async function ingestRaw(photo: Photo, path: string): Promise<Photo> {
   if (!isTauri()) return meta(photo);
+  const exif = await fetch(fileUrl(path))
+    .then((r) => r.blob())
+    .then(readExifTags)
+    .catch(() => ({ tags: {} }) as ExifData);
   const decoded = await decodeRaw(path);
   photo.width = decoded.width;
   photo.height = decoded.height;
@@ -53,7 +78,7 @@ async function ingestRaw(photo: Photo, path: string): Promise<Photo> {
   } finally {
     bmp.close();
   }
-  return meta(photo);
+  return meta(photo, exif.tags);
 }
 
 export async function photosFromScanned(existing: Photo[], files: ScannedFile[]): Promise<Photo[]> {

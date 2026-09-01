@@ -1,6 +1,7 @@
 import { useState } from "react";
-import { GRADE_ZONES, HSL_CHANNELS, RANGES, type Crop, type CropAspect, type CropPatch, type EditRecipe, type GlobalsPatch, type HslChannel, type Mask } from "../recipe/types";
-import { Panel, Slider } from "./controls";
+import { GRADE_ZONES, HSL_CHANNELS, RANGES, type Crop, type CropAspect, type CropPatch, type EditRecipe, type Effects, type GlobalsPatch, type HslChannel, type Mask, type Optics } from "../recipe/types";
+import { LENS_PROFILES } from "../render/lensProfiles";
+import { Panel, Select, Slider } from "./controls";
 import { GeometryPanel } from "./crop";
 import { CurveEditor } from "./curve";
 import { ColorWheel } from "./wheel";
@@ -77,6 +78,49 @@ export function DevelopPanels({
       onCommit={onCommit}
       onReset={() => {
         onLive({ [key]: 0 });
+        onCommit();
+      }}
+    />
+  );
+
+  const optics = (
+    key: keyof Omit<Optics, "profileId">,
+    label: string,
+    range: readonly [number, number],
+    step: number,
+  ) => (
+    <Slider
+      label={label}
+      value={g.optics[key]}
+      min={range[0]}
+      max={range[1]}
+      step={step}
+      onChange={(v) => onLive({ optics: { [key]: v } })}
+      onCommit={onCommit}
+      onReset={() => {
+        onLive({ optics: { [key]: 0 } });
+        onCommit();
+      }}
+    />
+  );
+
+  const effect = (
+    key: keyof Effects,
+    label: string,
+    range: readonly [number, number],
+    step: number,
+    reset: number,
+  ) => (
+    <Slider
+      label={label}
+      value={g.effects[key]}
+      min={range[0]}
+      max={range[1]}
+      step={step}
+      onChange={(v) => onLive({ effects: { [key]: v } })}
+      onCommit={onCommit}
+      onReset={() => {
+        onLive({ effects: { [key]: reset } });
         onCommit();
       }}
     />
@@ -238,8 +282,32 @@ export function DevelopPanels({
         onBrushTool={onBrushTool}
       />
       <Panel {...panel("optics", "Optics")}>
-        {num("lensCorrection", "Lens correction", RANGES.lensCorrection, 1)}
-        <p className="stub">Stored on the recipe; no profile library in v1.</p>
+        <Select
+          label="Profile"
+          value={g.optics.profileId}
+          options={[
+            { value: "", label: "None" },
+            ...LENS_PROFILES.map((p) => ({ value: p.id, label: p.name })),
+          ]}
+          onChange={(profileId) => {
+            onLive({ optics: { profileId } });
+            onCommit();
+          }}
+        />
+        {optics("distortion", "Distortion", RANGES.distortion, 1)}
+        {optics("ca", "Chromatic aberration", RANGES.ca, 1)}
+        <p className="group-label">Defringe</p>
+        {optics("defringePurple", "Purple", RANGES.defringe, 1)}
+        {optics("defringeGreen", "Green", RANGES.defringe, 1)}
+      </Panel>
+      <Panel {...panel("effects", "Effects")}>
+        <p className="group-label">Vignette</p>
+        {effect("vignetteAmount", "Amount", RANGES.vignetteAmount, 1, 0)}
+        {effect("vignetteMidpoint", "Midpoint", RANGES.vignetteMidpoint, 1, 50)}
+        <p className="group-label">Grain</p>
+        {effect("grainAmount", "Amount", RANGES.grainAmount, 1, 0)}
+        {effect("grainSize", "Size", RANGES.grainSize, 1, 50)}
+        {effect("grainRoughness", "Roughness", RANGES.grainRoughness, 1, 50)}
       </Panel>
       <Panel {...panel("geo", "Geometry")}>
         <GeometryPanel

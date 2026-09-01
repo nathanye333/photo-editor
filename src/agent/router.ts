@@ -1,4 +1,12 @@
-export type ToolCategory = "tone" | "color" | "detail" | "catalog" | "presets" | "masks" | "geometry";
+export type ToolCategory =
+  | "tone"
+  | "color"
+  | "detail"
+  | "optics"
+  | "catalog"
+  | "presets"
+  | "masks"
+  | "geometry";
 
 const KEYWORDS: Record<ToolCategory, string[]> = {
   tone: [
@@ -39,7 +47,6 @@ const KEYWORDS: Record<ToolCategory, string[]> = {
   detail: [
     "sharp",
     "noise",
-    "grain",
     "clarity",
     "texture",
     "dehaze",
@@ -49,6 +56,19 @@ const KEYWORDS: Record<ToolCategory, string[]> = {
     "smooth skin",
     "moire",
     "moiré",
+  ],
+  optics: [
+    "lens",
+    "profile",
+    "distortion",
+    "barrel",
+    "chromatic",
+    "fringe",
+    "fringing",
+    "corner",
+    "vignette",
+    "grain",
+    "film look",
   ],
   catalog: ["star", "rate", "flag", "pick", "reject", "cull", "rating"],
   presets: ["preset", "reset", "copy settings", "paste", "undo look"],
@@ -80,6 +100,8 @@ export const CATEGORY_DOCS: Record<ToolCategory, string> = {
     "Color: temp/tint (-100..100), vibrance, saturation, hsl.{red,orange,yellow,green,aqua,blue,purple,magenta}.{hue,sat,lum}. For split toning or a cinematic look use apply_color_grading (shadows/midtones/highlights wheels with hue 0-360, sat 0-100, lum -100..100, plus blending and balance).",
   detail:
     "Detail/presence: texture (fine), clarity (mid), dehaze; sharpening with sharpenRadius/sharpenDetail/sharpenMasking; noiseReduction (luminance) with noiseReductionDetail, plus colorNoiseReduction and moire. Raise sharpenMasking to keep sharpening off skin; negative texture smooths it.",
+  optics:
+    "Optics/effects: set_lens_profile picks a built-in lens profile; apply_develop_patch carries optics.{distortion,ca,defringePurple,defringeGreen} and effects.{vignetteAmount,vignetteMidpoint,grainAmount,grainSize,grainRoughness}. Negative vignetteAmount darkens the corners.",
   catalog: "Catalog: apply_catalog_patch with rating 0-5 and flag pick|reject|unflagged.",
   presets: "Presets: apply_preset by name, reset_recipe, copy_settings.",
   masks:

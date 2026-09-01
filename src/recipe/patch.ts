@@ -19,6 +19,7 @@ import {
   type CurvePoints,
   type DevelopPatch,
   type EditRecipe,
+  type Effects,
   type Flag,
   type Globals,
   type GlobalsPatch,
@@ -27,6 +28,7 @@ import {
   type MaskComponent,
   type MaskMode,
   type MaskPatch,
+  type Optics,
   type PatchMode,
   type ToneCurve,
 } from "./types";
@@ -123,6 +125,32 @@ function applyColorGrading(
   return next;
 }
 
+function applyOptics(current: Optics, patch: Partial<Optics> | undefined, mode: PatchMode): Optics {
+  const profileId = patch?.profileId;
+  return {
+    profileId: typeof profileId === "string" ? profileId : (current.profileId ?? ""),
+    distortion: applyScalar(current.distortion, patch?.distortion, mode, RANGES.distortion),
+    ca: applyScalar(current.ca, patch?.ca, mode, RANGES.ca),
+    defringePurple: applyScalar(current.defringePurple, patch?.defringePurple, mode, RANGES.defringe),
+    defringeGreen: applyScalar(current.defringeGreen, patch?.defringeGreen, mode, RANGES.defringe),
+  };
+}
+
+function applyEffects(current: Effects, patch: Partial<Effects> | undefined, mode: PatchMode): Effects {
+  return {
+    vignetteAmount: applyScalar(current.vignetteAmount, patch?.vignetteAmount, mode, RANGES.vignetteAmount),
+    vignetteMidpoint: applyScalar(
+      current.vignetteMidpoint,
+      patch?.vignetteMidpoint,
+      mode,
+      RANGES.vignetteMidpoint,
+    ),
+    grainAmount: applyScalar(current.grainAmount, patch?.grainAmount, mode, RANGES.grainAmount),
+    grainSize: applyScalar(current.grainSize, patch?.grainSize, mode, RANGES.grainSize),
+    grainRoughness: applyScalar(current.grainRoughness, patch?.grainRoughness, mode, RANGES.grainRoughness),
+  };
+}
+
 function wrapHue(hue: number): number {
   if (!Number.isFinite(hue)) return 0;
   return ((hue % 360) + 360) % 360;
@@ -171,6 +199,8 @@ function applyGlobals(current: Globals, patch: GlobalsPatch | undefined, mode: P
       p.colorGrading,
       mode,
     ),
+    optics: applyOptics(g.optics ?? defaultGlobals().optics, p.optics, mode),
+    effects: applyEffects(g.effects ?? defaultGlobals().effects, p.effects, mode),
     texture: applyScalar(g.texture, p.texture, mode, RANGES.texture),
     clarity: applyScalar(g.clarity, p.clarity, mode, RANGES.clarity),
     dehaze: applyScalar(g.dehaze, p.dehaze, mode, RANGES.dehaze),
@@ -202,7 +232,10 @@ function clampMaskParams(params: Partial<Globals> | undefined): Partial<Globals>
   const patch = params as GlobalsPatch;
   const full = applyGlobals(defaultGlobals(), patch, "absolute");
   const out: Partial<Globals> = {};
-  const scalars: (keyof Omit<Globals, "hsl" | "toneCurve" | "colorGrading">)[] = [
+  const scalars: (keyof Omit<
+    Globals,
+    "hsl" | "toneCurve" | "colorGrading" | "optics" | "effects"
+  >)[] = [
     "exposure",
     "contrast",
     "highlights",

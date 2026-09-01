@@ -113,12 +113,12 @@ Fill out panels that exist as stubs or single sliders.
 
 ### Optics
 
-- [ ] Lens profile library (built-in or Adobe-compatible)
-- [ ] Auto profile matching from EXIF (camera + lens)
-- [ ] Chromatic aberration removal
-- [ ] Profile vignette correction
-- [ ] Manual vignette
-- [ ] Defringe (purple / green)
+- [x] Lens profile library (built-in generic profiles; Adobe LCP import out of scope)
+- [x] Auto profile matching from EXIF (camera + lens)
+- [x] Chromatic aberration removal
+- [x] Profile vignette correction
+- [x] Manual vignette
+- [x] Defringe (purple / green)
 
 ### Detail (split controls)
 
@@ -136,7 +136,7 @@ Fill out panels that exist as stubs or single sliders.
 ### Other develop
 
 - [ ] Calibration panel / camera color profiles (Adobe Color, Portrait, B&W, etc.)
-- [ ] Grain
+- [x] Grain
 - [x] Texture (separate from clarity)
 - [ ] Auto tone / one-click enhance
 - [ ] Edit history panel with named snapshots
