@@ -14,7 +14,10 @@ import {
   type EditRecipe,
   type Flag,
   type Mask,
+  type PatchMode,
 } from "../recipe/types";
+import { CAMERA_PROFILES } from "../render/cameraProfiles";
+import { LENS_PROFILES } from "../render/lensProfiles";
 
 const hslChannel = z.object({
   hue: z.number().optional(),
@@ -33,6 +36,12 @@ const hslPatch = z.object({
   magenta: hslChannel.optional(),
 });
 
+const gradeWheel = z.object({
+  hue: z.number().min(0).max(360).optional(),
+  sat: z.number().min(0).max(100).optional(),
+  lum: z.number().min(-100).max(100).optional(),
+});
+
 const maskParamsSchema = z.object({
   exposure: z.number().optional(),
   contrast: z.number().optional(),
@@ -44,6 +53,7 @@ const maskParamsSchema = z.object({
   tint: z.number().optional(),
   vibrance: z.number().optional(),
   saturation: z.number().optional(),
+  texture: z.number().optional(),
   clarity: z.number().optional(),
   dehaze: z.number().optional(),
 });
@@ -62,7 +72,10 @@ function summarizeMasks(masks: Mask[]) {
 
 export type AgentActions = {
   getRecipe: () => EditRecipe;
-  patchDevelop: (patch: DevelopPatch) => EditRecipe;
+  /** Defaults to delta so tone tools stay iterative; absolute for set-value tools. */
+  patchDevelop: (patch: DevelopPatch, mode?: PatchMode) => EditRecipe;
+  /** Analyses the source pixels and commits a tone/white-balance starting point. */
+  autoTone: () => string;
   patchCatalog: (patch: CatalogPatch) => { rating: number; flag: Flag };
   applyPreset: (name: string) => string;
   copySettings: () => void;
@@ -85,10 +98,45 @@ export function createAgentTools(actions: AgentActions) {
         tint: z.number().optional(),
         vibrance: z.number().optional(),
         saturation: z.number().optional(),
-        clarity: z.number().optional(),
+        texture: z.number().optional().describe("Fine detail; positive crisps skin/foliage, negative smooths"),
+        clarity: z.number().optional().describe("Mid-frequency local contrast"),
         dehaze: z.number().optional(),
-        sharpening: z.number().optional(),
-        noiseReduction: z.number().optional(),
+        sharpening: z.number().optional().describe("Sharpening amount 0-100"),
+        sharpenRadius: z.number().optional(),
+        sharpenDetail: z.number().optional(),
+        sharpenMasking: z.number().optional().describe("Restricts sharpening to edges; raise for skin"),
+        noiseReduction: z.number().optional().describe("Luminance noise reduction 0-100"),
+        noiseReductionDetail: z.number().optional().describe("Restores fine structure lost to luminance NR"),
+        colorNoiseReduction: z.number().optional(),
+        moire: z.number().optional(),
+        optics: z
+          .object({
+            distortion: z.number().optional(),
+            ca: z.number().optional().describe("Chromatic aberration removal 0-100"),
+            defringePurple: z.number().optional(),
+            defringeGreen: z.number().optional(),
+          })
+          .optional(),
+        effects: z
+          .object({
+            vignetteAmount: z.number().optional().describe("Negative darkens corners, positive brightens"),
+            vignetteMidpoint: z.number().optional(),
+            grainAmount: z.number().optional(),
+            grainSize: z.number().optional(),
+            grainRoughness: z.number().optional(),
+          })
+          .optional(),
+        calibration: z
+          .object({
+            shadowTint: z.number().optional(),
+            redHue: z.number().optional(),
+            redSat: z.number().optional(),
+            greenHue: z.number().optional(),
+            greenSat: z.number().optional(),
+            blueHue: z.number().optional(),
+            blueSat: z.number().optional(),
+          })
+          .optional(),
         hsl: hslPatch.optional(),
         toneCurve: z
           .object({
@@ -104,6 +152,53 @@ export function createAgentTools(actions: AgentActions) {
         return { ok: true, globals: recipe.globals };
       },
     }),
+    auto_tone: tool({
+      description:
+        "Analyse the image and set exposure, contrast, highlights, shadows, whites, blacks and white balance in one step. Use it as a starting point before finer adjustments.",
+      inputSchema: z.object({}),
+      execute: async () => ({ ok: true, result: actions.autoTone() }),
+    }),
+    set_camera_profile: tool({
+      description:
+        "Choose the camera colour profile the render starts from: color (default), portrait (softer contrast, warmer skin), landscape (punchier), neutral (flat), mono (black and white).",
+      inputSchema: z.object({
+        profile: z.enum(CAMERA_PROFILES.map((p) => p.id) as [string, ...string[]]),
+      }),
+      execute: async ({ profile }) => {
+        const recipe = actions.patchDevelop({ globals: { calibration: { profile } } }, "absolute");
+        return { ok: true, calibration: recipe.globals.calibration };
+      },
+    }),
+    set_lens_profile: tool({
+      description:
+        "Apply a built-in lens profile (distortion, corner falloff and CA correction) by id, or pass an empty id to remove it. Profiles are auto-matched from EXIF on import, so only change this when the match is wrong.",
+      inputSchema: z.object({
+        profileId: z.enum(["", ...LENS_PROFILES.map((p) => p.id)] as [string, ...string[]]),
+      }),
+      execute: async ({ profileId }) => {
+        const recipe = actions.patchDevelop({ globals: { optics: { profileId } } }, "absolute");
+        return {
+          ok: true,
+          optics: recipe.globals.optics,
+          available: LENS_PROFILES.map((p) => ({ id: p.id, name: p.name })),
+        };
+      },
+    }),
+    apply_color_grading: tool({
+      description:
+        "Tint the shadows, midtones and highlights independently (split toning). hue is 0-360 degrees, sat 0-100, lum -100..100. blending widens the overlap between zones, balance shifts the shadow/highlight split. Values are absolute, not deltas. Classic teal-and-orange is shadows hue ~200 and highlights hue ~35.",
+      inputSchema: z.object({
+        shadows: gradeWheel.optional(),
+        midtones: gradeWheel.optional(),
+        highlights: gradeWheel.optional(),
+        blending: z.number().min(0).max(100).optional(),
+        balance: z.number().min(-100).max(100).optional(),
+      }),
+      execute: async (input) => {
+        const recipe = actions.patchDevelop({ globals: { colorGrading: input } }, "absolute");
+        return { ok: true, colorGrading: recipe.globals.colorGrading };
+      },
+    }),
     set_tone_curve_points: tool({
       description:
         "Replace the point curve for one channel. Points are [input, output] pairs in 0–1 (origin bottom-left); include both endpoints. Use rgb for a composite S-curve or fade, red/green/blue for colour casts.",
@@ -115,9 +210,10 @@ export function createAgentTools(actions: AgentActions) {
           .max(16),
       }),
       execute: async ({ channel, points }) => {
-        const recipe = actions.patchDevelop({
-          globals: { toneCurve: { channels: { [channel]: points as CurvePoints } } },
-        });
+        const recipe = actions.patchDevelop(
+          { globals: { toneCurve: { channels: { [channel]: points as CurvePoints } } } },
+          "absolute",
+        );
         return { ok: true, channels: recipe.globals.toneCurve.channels };
       },
     }),

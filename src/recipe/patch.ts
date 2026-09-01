@@ -1,21 +1,27 @@
+import { DEFAULT_CAMERA_PROFILE } from "../render/cameraProfiles";
 import { normalizeCrop } from "./crop";
 import { identityPoints } from "./curve";
 import { defaultGlobals, defaultRecipe } from "./defaults";
 import {
   CURVE_CHANNELS,
+  GRADE_ZONES,
   HSL_CHANNELS,
   MAX_CURVE_POINTS,
   MAX_MASKS,
   RANGES,
   RECIPE_VERSION,
   type BrushStroke,
+  type Calibration,
   type CatalogPatch,
+  type ColorGrading,
+  type ColorGradingPatch,
   type Crop,
   type CropPatch,
   type CurveChannels,
   type CurvePoints,
   type DevelopPatch,
   type EditRecipe,
+  type Effects,
   type Flag,
   type Globals,
   type GlobalsPatch,
@@ -24,6 +30,7 @@ import {
   type MaskComponent,
   type MaskMode,
   type MaskPatch,
+  type Optics,
   type PatchMode,
   type ToneCurve,
 } from "./types";
@@ -98,6 +105,77 @@ function applyCurveChannels(
   return next;
 }
 
+function applyColorGrading(
+  current: ColorGrading,
+  patch: ColorGradingPatch | undefined,
+  mode: PatchMode,
+): ColorGrading {
+  const next = {
+    blending: applyScalar(current.blending, patch?.blending, mode, RANGES.gradeBlending),
+    balance: applyScalar(current.balance, patch?.balance, mode, RANGES.gradeBalance),
+  } as ColorGrading;
+  for (const zone of GRADE_ZONES) {
+    const cur = current[zone];
+    const p = patch?.[zone];
+    next[zone] = {
+      // Hue is circular, so it wraps instead of clamping at the ends.
+      hue: wrapHue(p?.hue === undefined ? cur.hue : mode === "delta" ? cur.hue + p.hue : p.hue),
+      sat: applyScalar(cur.sat, p?.sat, mode, RANGES.gradeSat),
+      lum: applyScalar(cur.lum, p?.lum, mode, RANGES.gradeLum),
+    };
+  }
+  return next;
+}
+
+function applyCalibration(
+  current: Calibration,
+  patch: Partial<Calibration> | undefined,
+  mode: PatchMode,
+): Calibration {
+  const profile = patch?.profile;
+  return {
+    profile: typeof profile === "string" ? profile : (current.profile ?? DEFAULT_CAMERA_PROFILE),
+    shadowTint: applyScalar(current.shadowTint, patch?.shadowTint, mode, RANGES.shadowTint),
+    redHue: applyScalar(current.redHue, patch?.redHue, mode, RANGES.primaryHue),
+    redSat: applyScalar(current.redSat, patch?.redSat, mode, RANGES.primarySat),
+    greenHue: applyScalar(current.greenHue, patch?.greenHue, mode, RANGES.primaryHue),
+    greenSat: applyScalar(current.greenSat, patch?.greenSat, mode, RANGES.primarySat),
+    blueHue: applyScalar(current.blueHue, patch?.blueHue, mode, RANGES.primaryHue),
+    blueSat: applyScalar(current.blueSat, patch?.blueSat, mode, RANGES.primarySat),
+  };
+}
+
+function applyOptics(current: Optics, patch: Partial<Optics> | undefined, mode: PatchMode): Optics {
+  const profileId = patch?.profileId;
+  return {
+    profileId: typeof profileId === "string" ? profileId : (current.profileId ?? ""),
+    distortion: applyScalar(current.distortion, patch?.distortion, mode, RANGES.distortion),
+    ca: applyScalar(current.ca, patch?.ca, mode, RANGES.ca),
+    defringePurple: applyScalar(current.defringePurple, patch?.defringePurple, mode, RANGES.defringe),
+    defringeGreen: applyScalar(current.defringeGreen, patch?.defringeGreen, mode, RANGES.defringe),
+  };
+}
+
+function applyEffects(current: Effects, patch: Partial<Effects> | undefined, mode: PatchMode): Effects {
+  return {
+    vignetteAmount: applyScalar(current.vignetteAmount, patch?.vignetteAmount, mode, RANGES.vignetteAmount),
+    vignetteMidpoint: applyScalar(
+      current.vignetteMidpoint,
+      patch?.vignetteMidpoint,
+      mode,
+      RANGES.vignetteMidpoint,
+    ),
+    grainAmount: applyScalar(current.grainAmount, patch?.grainAmount, mode, RANGES.grainAmount),
+    grainSize: applyScalar(current.grainSize, patch?.grainSize, mode, RANGES.grainSize),
+    grainRoughness: applyScalar(current.grainRoughness, patch?.grainRoughness, mode, RANGES.grainRoughness),
+  };
+}
+
+function wrapHue(hue: number): number {
+  if (!Number.isFinite(hue)) return 0;
+  return ((hue % 360) + 360) % 360;
+}
+
 export function normalizePoints(points: CurvePoints | undefined): CurvePoints {
   if (!Array.isArray(points)) return identityPoints();
   const pts = points
@@ -136,10 +214,39 @@ function applyGlobals(current: Globals, patch: GlobalsPatch | undefined, mode: P
     saturation: applyScalar(g.saturation, p.saturation, mode, RANGES.saturation),
     hsl: applyHsl(g.hsl, p.hsl, mode),
     toneCurve: applyCurve(g.toneCurve, p.toneCurve, mode),
+    colorGrading: applyColorGrading(
+      g.colorGrading ?? defaultGlobals().colorGrading,
+      p.colorGrading,
+      mode,
+    ),
+    calibration: applyCalibration(
+      g.calibration ?? defaultGlobals().calibration,
+      p.calibration,
+      mode,
+    ),
+    optics: applyOptics(g.optics ?? defaultGlobals().optics, p.optics, mode),
+    effects: applyEffects(g.effects ?? defaultGlobals().effects, p.effects, mode),
+    texture: applyScalar(g.texture, p.texture, mode, RANGES.texture),
     clarity: applyScalar(g.clarity, p.clarity, mode, RANGES.clarity),
     dehaze: applyScalar(g.dehaze, p.dehaze, mode, RANGES.dehaze),
     sharpening: applyScalar(g.sharpening, p.sharpening, mode, RANGES.sharpening),
+    sharpenRadius: applyScalar(g.sharpenRadius, p.sharpenRadius, mode, RANGES.sharpenRadius),
+    sharpenDetail: applyScalar(g.sharpenDetail, p.sharpenDetail, mode, RANGES.sharpenDetail),
+    sharpenMasking: applyScalar(g.sharpenMasking, p.sharpenMasking, mode, RANGES.sharpenMasking),
     noiseReduction: applyScalar(g.noiseReduction, p.noiseReduction, mode, RANGES.noiseReduction),
+    noiseReductionDetail: applyScalar(
+      g.noiseReductionDetail,
+      p.noiseReductionDetail,
+      mode,
+      RANGES.noiseReductionDetail,
+    ),
+    colorNoiseReduction: applyScalar(
+      g.colorNoiseReduction,
+      p.colorNoiseReduction,
+      mode,
+      RANGES.colorNoiseReduction,
+    ),
+    moire: applyScalar(g.moire, p.moire, mode, RANGES.moire),
     lensCorrection: applyScalar(g.lensCorrection, p.lensCorrection, mode, RANGES.lensCorrection),
     cropAngle: applyScalar(g.cropAngle, p.cropAngle, mode, RANGES.cropAngle),
   };
@@ -150,7 +257,10 @@ function clampMaskParams(params: Partial<Globals> | undefined): Partial<Globals>
   const patch = params as GlobalsPatch;
   const full = applyGlobals(defaultGlobals(), patch, "absolute");
   const out: Partial<Globals> = {};
-  const scalars: (keyof Omit<Globals, "hsl" | "toneCurve">)[] = [
+  const scalars: (keyof Omit<
+    Globals,
+    "hsl" | "toneCurve" | "colorGrading" | "calibration" | "optics" | "effects"
+  >)[] = [
     "exposure",
     "contrast",
     "highlights",
@@ -161,10 +271,17 @@ function clampMaskParams(params: Partial<Globals> | undefined): Partial<Globals>
     "tint",
     "vibrance",
     "saturation",
+    "texture",
     "clarity",
     "dehaze",
     "sharpening",
+    "sharpenRadius",
+    "sharpenDetail",
+    "sharpenMasking",
     "noiseReduction",
+    "noiseReductionDetail",
+    "colorNoiseReduction",
+    "moire",
     "lensCorrection",
     "cropAngle",
   ];

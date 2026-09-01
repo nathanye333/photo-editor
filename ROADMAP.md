@@ -85,7 +85,7 @@ Unlock serious workflows: editable RAW and basic framing.
 - [x] Native RAW decode (ffmpeg via Tauri desktop)
 - [x] RAW preview in Library grid and Develop
 - [x] RAW-aware thumbnail generation
-- [ ] White balance from RAW metadata as starting point
+- [x] White balance from RAW metadata as starting point
 
 ### Crop & transform
 
@@ -107,25 +107,25 @@ Fill out panels that exist as stubs or single sliders.
 
 ### Color grading
 
-- [ ] Global shadow / midtone / highlight wheels
-- [ ] Blending and balance controls
-- [ ] Renderer support for grading LUT or equivalent
+- [x] Global shadow / midtone / highlight wheels
+- [x] Blending and balance controls
+- [x] Renderer support for grading LUT or equivalent (per-zone tint weighted by luminance)
 
 ### Optics
 
-- [ ] Lens profile library (built-in or Adobe-compatible)
-- [ ] Auto profile matching from EXIF (camera + lens)
-- [ ] Chromatic aberration removal
-- [ ] Profile vignette correction
-- [ ] Manual vignette
-- [ ] Defringe (purple / green)
+- [x] Lens profile library (built-in generic profiles; Adobe LCP import out of scope)
+- [x] Auto profile matching from EXIF (camera + lens)
+- [x] Chromatic aberration removal
+- [x] Profile vignette correction
+- [x] Manual vignette
+- [x] Defringe (purple / green)
 
 ### Detail (split controls)
 
-- [ ] Sharpening: amount, radius, detail, masking
-- [ ] Luminance noise reduction
-- [ ] Color noise reduction
-- [ ] Moiré reduction
+- [x] Sharpening: amount, radius, detail, masking
+- [x] Luminance noise reduction
+- [x] Color noise reduction
+- [x] Moiré reduction
 
 ### Tone curve
 
@@ -135,10 +135,10 @@ Fill out panels that exist as stubs or single sliders.
 
 ### Other develop
 
-- [ ] Calibration panel / camera color profiles (Adobe Color, Portrait, B&W, etc.)
-- [ ] Grain
-- [ ] Texture (separate from clarity)
-- [ ] Auto tone / one-click enhance
+- [x] Calibration panel / camera color profiles (Adobe Color, Portrait, B&W, etc.)
+- [x] Grain
+- [x] Texture (separate from clarity)
+- [x] Auto tone / one-click enhance
 - [ ] Edit history panel with named snapshots
 
 **Exit criteria:** Full develop panel set comparable to Lightroom's global + optics + detail; no stub messages in Develop UI.

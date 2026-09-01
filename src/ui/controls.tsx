@@ -31,6 +31,26 @@ export function Slider(props: {
   );
 }
 
+export function Select(props: {
+  label: string;
+  value: string;
+  options: Array<{ value: string; label: string }>;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <label className="select">
+      <span className="slider-label">{props.label}</span>
+      <select value={props.value} onChange={(e) => props.onChange(e.target.value)}>
+        {props.options.map((o) => (
+          <option key={o.value} value={o.value}>
+            {o.label}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
 export function Panel(props: {
   id: string;
   title: string;

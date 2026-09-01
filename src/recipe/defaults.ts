@@ -1,3 +1,4 @@
+import { DEFAULT_CAMERA_PROFILE } from "../render/cameraProfiles";
 import { defaultCrop } from "./crop";
 import { identityPoints } from "./curve";
 import {
@@ -5,12 +6,15 @@ import {
   type BrushStroke,
   type EditRecipe,
   type Globals,
+  type GradeWheel,
   type HslAdjust,
   type Mask,
   RECIPE_VERSION,
 } from "./types";
 
 const zeroHsl = (): HslAdjust => ({ hue: 0, sat: 0, lum: 0 });
+
+const neutralWheel = (): GradeWheel => ({ hue: 0, sat: 0, lum: 0 });
 
 export function defaultGlobals(): Globals {
   return {
@@ -37,10 +41,48 @@ export function defaultGlobals(): Globals {
         blue: identityPoints(),
       },
     },
+    colorGrading: {
+      shadows: neutralWheel(),
+      midtones: neutralWheel(),
+      highlights: neutralWheel(),
+      blending: 50,
+      balance: 0,
+    },
+    texture: 0,
     clarity: 0,
     dehaze: 0,
     sharpening: 0,
+    sharpenRadius: 0,
+    sharpenDetail: 0,
+    sharpenMasking: 0,
     noiseReduction: 0,
+    noiseReductionDetail: 0,
+    colorNoiseReduction: 0,
+    moire: 0,
+    calibration: {
+      profile: DEFAULT_CAMERA_PROFILE,
+      shadowTint: 0,
+      redHue: 0,
+      redSat: 0,
+      greenHue: 0,
+      greenSat: 0,
+      blueHue: 0,
+      blueSat: 0,
+    },
+    optics: {
+      profileId: "",
+      distortion: 0,
+      ca: 0,
+      defringePurple: 0,
+      defringeGreen: 0,
+    },
+    effects: {
+      vignetteAmount: 0,
+      vignetteMidpoint: 50,
+      grainAmount: 0,
+      grainSize: 50,
+      grainRoughness: 50,
+    },
     lensCorrection: 0,
     cropAngle: 0,
   };

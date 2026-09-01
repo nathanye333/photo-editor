@@ -39,6 +39,56 @@ export type ToneCurve = {
   channels: CurveChannels;
 };
 
+/** Camera profile plus Lightroom-style primary calibration. */
+export type Calibration = {
+  profile: string;
+  shadowTint: number;
+  redHue: number;
+  redSat: number;
+  greenHue: number;
+  greenSat: number;
+  blueHue: number;
+  blueSat: number;
+};
+
+export type Optics = {
+  /** Lens profile id, or "" for none. Auto-matched from EXIF on import. */
+  profileId: string;
+  /** Manual distortion correction on top of the profile. */
+  distortion: number;
+  /** Lateral chromatic aberration removal. */
+  ca: number;
+  defringePurple: number;
+  defringeGreen: number;
+};
+
+export type Effects = {
+  /** Negative darkens the corners, positive brightens, as in Lightroom. */
+  vignetteAmount: number;
+  vignetteMidpoint: number;
+  grainAmount: number;
+  grainSize: number;
+  grainRoughness: number;
+};
+
+export const GRADE_ZONES = ["shadows", "midtones", "highlights"] as const;
+
+export type GradeZone = (typeof GRADE_ZONES)[number];
+
+/** One colour-grading wheel: hue in degrees, saturation 0–100, luminance -100–100. */
+export type GradeWheel = {
+  hue: number;
+  sat: number;
+  lum: number;
+};
+
+export type ColorGrading = Record<GradeZone, GradeWheel> & {
+  /** Zone overlap, 0 = hard split, 100 = wide crossfade. */
+  blending: number;
+  /** Shifts the shadow/highlight split point. */
+  balance: number;
+};
+
 export type CropAspect = "original" | "1:1" | "4:5" | "16:9" | "custom";
 
 /** Normalized crop on source image (origin top-left). Applied in preview + export. */
@@ -66,11 +116,22 @@ export type Globals = {
   saturation: number;
   hsl: Record<HslChannel, HslAdjust>;
   toneCurve: ToneCurve;
+  colorGrading: ColorGrading;
+  texture: number;
   clarity: number;
   dehaze: number;
   sharpening: number;
+  sharpenRadius: number;
+  sharpenDetail: number;
+  sharpenMasking: number;
   noiseReduction: number;
-  /** Placeholder 0–100; unused in v1 renderer. */
+  noiseReductionDetail: number;
+  colorNoiseReduction: number;
+  moire: number;
+  calibration: Calibration;
+  optics: Optics;
+  effects: Effects;
+  /** @deprecated Superseded by the optics group — kept for legacy recipes. */
   lensCorrection: number;
   /** @deprecated Use recipe.crop.angle — kept for legacy recipes. */
   cropAngle: number;
@@ -136,10 +197,18 @@ export type ToneCurvePatch = Partial<
   Omit<ToneCurve, "channels"> & { channels: Partial<CurveChannels> }
 >;
 
+export type ColorGradingPatch = Partial<
+  Record<GradeZone, Partial<GradeWheel>> & { blending: number; balance: number }
+>;
+
 export type GlobalsPatch = Partial<
-  Omit<Globals, "hsl" | "toneCurve"> & {
+  Omit<Globals, "hsl" | "toneCurve" | "colorGrading" | "calibration" | "optics" | "effects"> & {
     hsl?: HslPatch;
     toneCurve?: ToneCurvePatch;
+    colorGrading?: ColorGradingPatch;
+    calibration?: Partial<Calibration>;
+    optics?: Partial<Optics>;
+    effects?: Partial<Effects>;
   }
 >;
 
@@ -186,10 +255,33 @@ export const RANGES = {
   hslSat: [-100, 100],
   hslLum: [-100, 100],
   curve: [-100, 100],
+  gradeHue: [0, 360],
+  gradeSat: [0, 100],
+  gradeLum: [-100, 100],
+  gradeBlending: [0, 100],
+  gradeBalance: [-100, 100],
+  texture: [-100, 100],
   clarity: [-100, 100],
   dehaze: [-100, 100],
   sharpening: [0, 100],
+  sharpenRadius: [0, 100],
+  sharpenDetail: [0, 100],
+  sharpenMasking: [0, 100],
   noiseReduction: [0, 100],
+  noiseReductionDetail: [0, 100],
+  colorNoiseReduction: [0, 100],
+  moire: [0, 100],
+  shadowTint: [-100, 100],
+  primaryHue: [-100, 100],
+  primarySat: [-100, 100],
+  distortion: [-100, 100],
+  ca: [0, 100],
+  defringe: [0, 100],
+  vignetteAmount: [-100, 100],
+  vignetteMidpoint: [0, 100],
+  grainAmount: [0, 100],
+  grainSize: [0, 100],
+  grainRoughness: [0, 100],
   lensCorrection: [0, 100],
   cropAngle: [-45, 45],
   rating: [0, 5],
@@ -202,6 +294,24 @@ export const RANGES = {
   brushOpacity: [1, 100],
   rangeUnit: [0, 1],
 } as const;
+
+/** True when only the camera profile is in play, so the shader can skip the stage. */
+export function isNeutralCalibration(cal: Calibration): boolean {
+  return (
+    cal.shadowTint === 0 &&
+    cal.redHue === 0 &&
+    cal.redSat === 0 &&
+    cal.greenHue === 0 &&
+    cal.greenSat === 0 &&
+    cal.blueHue === 0 &&
+    cal.blueSat === 0
+  );
+}
+
+/** Blending and balance alone do nothing while every wheel is neutral. */
+export function isNeutralGrading(grading: ColorGrading): boolean {
+  return GRADE_ZONES.every((zone) => grading[zone].sat === 0 && grading[zone].lum === 0);
+}
 
 export function primaryComponent(mask: Mask): MaskComponent | null {
   return mask.components[0] ?? null;

@@ -1,19 +1,25 @@
+import { analyzePixels, type PixelStats } from "../recipe/auto";
 import { defaultRecipe } from "../recipe/defaults";
 import { cropAffectsPixels, cropPixelSize } from "../recipe/crop";
 import { isIdentityToneCurve, LUT_SIZE, toneCurveTexture } from "../recipe/curve";
 import { mergeMaskGlobals } from "../recipe/patch";
 import {
   HSL_CHANNELS,
+  isNeutralCalibration,
+  isNeutralGrading,
   MAX_MASKS,
   primaryComponent,
   type Crop,
   type EditRecipe,
   type Globals,
+  type GradeWheel,
   type Mask,
   type MaskComponent,
   type ToneCurve,
 } from "../recipe/types";
 import { rasterizeBrushStrokes, rgbToHueChroma } from "./brushRaster";
+import { cameraProfile } from "./cameraProfiles";
+import { lensProfile } from "./lensProfiles";
 import {
   BLIT_FRAG,
   FRAG,
@@ -256,6 +262,11 @@ export class PreviewRenderer {
     return this.image ? { w: this.image.width, h: this.image.height } : null;
   }
 
+  /** Stats over the undeveloped source, so auto tone is not fed its own output. */
+  sourceStats(): PixelStats | null {
+    return this.sourcePixels ? analyzePixels(this.sourcePixels.data, 4) : null;
+  }
+
   /** Sample source image at normalized UV (origin top-left). */
   sampleSource(uvX: number, uvY: number): SourceSample | null {
     const px = this.sourcePixels;
@@ -359,10 +370,46 @@ export class PreviewRenderer {
     gl.uniform1f(loc(gl, program, "uCurveLutOn"), isIdentityToneCurve(g.toneCurve) ? 0 : 1);
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, this.texture);
+    const grade = g.colorGrading;
+    const wheel = (w: GradeWheel) => [w.hue, w.sat, w.lum] as const;
+    gl.uniform3f(loc(gl, program, "uGradeShadow"), ...wheel(grade.shadows));
+    gl.uniform3f(loc(gl, program, "uGradeMid"), ...wheel(grade.midtones));
+    gl.uniform3f(loc(gl, program, "uGradeHigh"), ...wheel(grade.highlights));
+    gl.uniform1f(loc(gl, program, "uGradeBlend"), grade.blending);
+    gl.uniform1f(loc(gl, program, "uGradeBalance"), grade.balance);
+    gl.uniform1f(loc(gl, program, "uGradeOn"), isNeutralGrading(grade) ? 0 : 1);
+    gl.uniform1f(loc(gl, program, "uTexture"), g.texture);
     gl.uniform1f(loc(gl, program, "uClarity"), g.clarity);
     gl.uniform1f(loc(gl, program, "uDehaze"), g.dehaze);
     gl.uniform1f(loc(gl, program, "uSharpen"), g.sharpening);
+    gl.uniform1f(loc(gl, program, "uSharpenRadius"), g.sharpenRadius);
+    gl.uniform1f(loc(gl, program, "uSharpenDetail"), g.sharpenDetail);
+    gl.uniform1f(loc(gl, program, "uSharpenMask"), g.sharpenMasking);
     gl.uniform1f(loc(gl, program, "uNR"), g.noiseReduction);
+    gl.uniform1f(loc(gl, program, "uNRDetail"), g.noiseReductionDetail);
+    gl.uniform1f(loc(gl, program, "uColorNR"), g.colorNoiseReduction);
+    gl.uniform1f(loc(gl, program, "uMoire"), g.moire);
+    const cal = g.calibration;
+    gl.uniform1fv(loc(gl, program, "uCalHue"), [cal.redHue, cal.greenHue, cal.blueHue]);
+    gl.uniform1fv(loc(gl, program, "uCalSat"), [cal.redSat, cal.greenSat, cal.blueSat]);
+    gl.uniform1f(loc(gl, program, "uShadowTint"), cal.shadowTint);
+    gl.uniform1f(loc(gl, program, "uCalOn"), isNeutralCalibration(cal) ? 0 : 1);
+    const camera = cameraProfile(cal.profile);
+    gl.uniform1f(loc(gl, program, "uProfContrast"), camera.contrast);
+    gl.uniform1f(loc(gl, program, "uProfSat"), camera.saturation);
+    gl.uniform1f(loc(gl, program, "uProfWarmth"), camera.warmth);
+    gl.uniform1f(loc(gl, program, "uProfMono"), camera.mono ? 1 : 0);
+    const profile = lensProfile(g.optics.profileId);
+    gl.uniform1f(loc(gl, program, "uDistortion"), (profile?.distortion ?? 0) + g.optics.distortion);
+    gl.uniform1f(loc(gl, program, "uCA"), Math.max(profile?.ca ?? 0, g.optics.ca));
+    gl.uniform1f(loc(gl, program, "uDefringeP"), g.optics.defringePurple);
+    gl.uniform1f(loc(gl, program, "uDefringeG"), g.optics.defringeGreen);
+    gl.uniform1f(loc(gl, program, "uProfileVignette"), profile?.vignette ?? 0);
+    gl.uniform1f(loc(gl, program, "uVignette"), g.effects.vignetteAmount);
+    gl.uniform1f(loc(gl, program, "uVignetteMid"), g.effects.vignetteMidpoint);
+    gl.uniform1f(loc(gl, program, "uGrainAmount"), g.effects.grainAmount);
+    gl.uniform1f(loc(gl, program, "uGrainSize"), g.effects.grainSize);
+    gl.uniform1f(loc(gl, program, "uGrainRough"), g.effects.grainRoughness);
     this.setCropUniforms(program, crop);
   }
 

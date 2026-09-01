@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createBrushMask, createColorRangeMask, createLuminanceMask, createRadialMask, defaultRecipe } from "./defaults";
-import { applyCatalogPatch, applyPatch, clamp } from "./patch";
-import { MAX_MASKS } from "./types";
+import { applyCatalogPatch, applyPatch, clamp, parseRecipe } from "./patch";
+import { isNeutralCalibration, isNeutralGrading, MAX_MASKS } from "./types";
 
 describe("applyPatch", () => {
   it("sets absolute values and clamps", () => {
@@ -25,6 +25,134 @@ describe("applyPatch", () => {
     );
     expect(r.globals.hsl.orange.sat).toBe(15);
     expect(r.globals.hsl.red.sat).toBe(0);
+  });
+
+  it("patches one colour grading zone at a time", () => {
+    const r = applyPatch(
+      defaultRecipe(),
+      { globals: { colorGrading: { shadows: { hue: 200, sat: 30 }, balance: -20 } } },
+      "absolute",
+    );
+    expect(r.globals.colorGrading.shadows).toEqual({ hue: 200, sat: 30, lum: 0 });
+    expect(r.globals.colorGrading.highlights).toEqual({ hue: 0, sat: 0, lum: 0 });
+    expect(r.globals.colorGrading.balance).toBe(-20);
+    expect(r.globals.colorGrading.blending).toBe(50);
+  });
+
+  it("wraps grading hue and clamps the rest", () => {
+    const r = applyPatch(
+      defaultRecipe(),
+      { globals: { colorGrading: { highlights: { hue: 400, sat: 250, lum: -400 }, blending: 900 } } },
+      "absolute",
+    );
+    expect(r.globals.colorGrading.highlights).toEqual({ hue: 40, sat: 100, lum: -100 });
+    expect(r.globals.colorGrading.blending).toBe(100);
+  });
+
+  it("wraps hue deltas past the ends of the wheel", () => {
+    const base = applyPatch(
+      defaultRecipe(),
+      { globals: { colorGrading: { midtones: { hue: 350 } } } },
+      "absolute",
+    );
+    const r = applyPatch(base, { globals: { colorGrading: { midtones: { hue: 30 } } } }, "delta");
+    expect(r.globals.colorGrading.midtones.hue).toBe(20);
+  });
+
+  it("reads neutral grading as a no-op", () => {
+    expect(isNeutralGrading(defaultRecipe().globals.colorGrading)).toBe(true);
+    const graded = applyPatch(defaultRecipe(), {
+      globals: { colorGrading: { shadows: { sat: 10 } } },
+    });
+    expect(isNeutralGrading(graded.globals.colorGrading)).toBe(false);
+  });
+
+  it("keeps the camera profile and clamps calibration sliders", () => {
+    const r = applyPatch(
+      defaultRecipe(),
+      { globals: { calibration: { profile: "landscape", shadowTint: -300, redHue: 20 } } },
+      "absolute",
+    );
+    expect(r.globals.calibration.profile).toBe("landscape");
+    expect(r.globals.calibration.shadowTint).toBe(-100);
+    expect(r.globals.calibration.redHue).toBe(20);
+    expect(r.globals.calibration.blueSat).toBe(0);
+    expect(isNeutralCalibration(r.globals.calibration)).toBe(false);
+  });
+
+  it("treats a bare profile change as neutral calibration", () => {
+    const r = applyPatch(defaultRecipe(), { globals: { calibration: { profile: "mono" } } }, "absolute");
+    expect(isNeutralCalibration(r.globals.calibration)).toBe(true);
+  });
+
+  it("defaults calibration for recipes saved before it existed", () => {
+    const legacy = parseRecipe({ version: 1, globals: { exposure: 0.5 } });
+    expect(legacy.globals.calibration.profile).toBe("color");
+    expect(isNeutralCalibration(legacy.globals.calibration)).toBe(true);
+  });
+
+  it("keeps optics profile ids and clamps optics sliders", () => {
+    const r = applyPatch(
+      defaultRecipe(),
+      { globals: { optics: { profileId: "wide-zoom", distortion: -400, ca: 220, defringePurple: 30 } } },
+      "absolute",
+    );
+    expect(r.globals.optics.profileId).toBe("wide-zoom");
+    expect(r.globals.optics.distortion).toBe(-100);
+    expect(r.globals.optics.ca).toBe(100);
+    expect(r.globals.optics.defringePurple).toBe(30);
+    expect(r.globals.optics.defringeGreen).toBe(0);
+  });
+
+  it("keeps effects midpoints when only grain changes", () => {
+    const r = applyPatch(defaultRecipe(), { globals: { effects: { grainAmount: 40 } } }, "absolute");
+    expect(r.globals.effects.grainAmount).toBe(40);
+    expect(r.globals.effects.grainSize).toBe(50);
+    expect(r.globals.effects.vignetteMidpoint).toBe(50);
+    expect(r.globals.effects.vignetteAmount).toBe(0);
+  });
+
+  it("defaults optics and effects for recipes saved before they existed", () => {
+    const legacy = parseRecipe({ version: 1, globals: { exposure: 0.5, lensCorrection: 40 } });
+    expect(legacy.globals.optics.profileId).toBe("");
+    expect(legacy.globals.effects.grainSize).toBe(50);
+    expect(legacy.globals.exposure).toBe(0.5);
+  });
+
+  it("clamps the split detail controls", () => {
+    const r = applyPatch(
+      defaultRecipe(),
+      {
+        globals: {
+          texture: -300,
+          sharpening: 60,
+          sharpenRadius: 400,
+          sharpenDetail: -20,
+          sharpenMasking: 40,
+          noiseReduction: 30,
+          noiseReductionDetail: 150,
+          colorNoiseReduction: 25,
+          moire: -5,
+        },
+      },
+      "absolute",
+    );
+    expect(r.globals.texture).toBe(-100);
+    expect(r.globals.sharpening).toBe(60);
+    expect(r.globals.sharpenRadius).toBe(100);
+    expect(r.globals.sharpenDetail).toBe(0);
+    expect(r.globals.sharpenMasking).toBe(40);
+    expect(r.globals.noiseReductionDetail).toBe(100);
+    expect(r.globals.colorNoiseReduction).toBe(25);
+    expect(r.globals.moire).toBe(0);
+  });
+
+  it("keeps detail params local to a mask", () => {
+    const mask = createBrushMask({ id: "b1", params: { texture: -40, sharpening: 20 } });
+    const r = applyPatch(defaultRecipe(), { masks: { upsert: [mask] } }, "absolute");
+    expect(r.masks[0].params.texture).toBe(-40);
+    expect(r.masks[0].params.sharpening).toBe(20);
+    expect(r.globals.texture).toBe(0);
   });
 
   it("does not invent masks", () => {

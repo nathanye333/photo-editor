@@ -17,3 +17,15 @@
 {"id":"matte-fade","instruction":"give it a matte fade","expectedCategories":["tone"],"expectedTool":"set_tone_curve_points"}
 {"id":"curve-lift-blacks","instruction":"lift the blacks with the curve","expectedCategories":["tone"],"expectedPatch":{"globals":{"toneCurve":{"channels":{"rgb":[[0,0.08],[1,1]]}}}},"mode":"absolute"}
 {"id":"curve-cool-shadows","instruction":"cool the shadows with a blue curve","expectedCategories":["tone","color"],"expectedPatch":{"globals":{"toneCurve":{"channels":{"blue":[[0,0.06],[1,1]]}}}},"mode":"absolute"}
+{"id":"texture-smooth-skin","instruction":"smooth skin a little","expectedCategories":["detail","color"],"expectedPatch":{"globals":{"texture":-25}},"mode":"delta"}
+{"id":"sharpen-masking","instruction":"sharpen the eyes but keep it off the skin","expectedCategories":["color","detail"],"expectedPatch":{"globals":{"sharpening":45,"sharpenMasking":60}},"mode":"absolute"}
+{"id":"color-noise","instruction":"clean up the color noise in this high iso shot","expectedCategories":["color","detail"],"expectedPatch":{"globals":{"colorNoiseReduction":40,"noiseReduction":25}},"mode":"absolute"}
+{"id":"teal-orange","instruction":"give it a cinematic teal and orange grade","expectedCategories":["color"],"expectedTool":"apply_color_grading"}
+{"id":"split-tone-shadows","instruction":"split tone the shadows blue","expectedCategories":["tone","color"],"expectedTool":"apply_color_grading"}
+{"id":"vignette-darken","instruction":"darken the corners with a vignette","expectedCategories":["optics","tone"],"expectedPatch":{"globals":{"effects":{"vignetteAmount":-35}}},"mode":"absolute"}
+{"id":"film-grain","instruction":"add some film grain","expectedCategories":["optics"],"expectedPatch":{"globals":{"effects":{"grainAmount":30}}},"mode":"absolute"}
+{"id":"lens-profile","instruction":"correct the lens distortion on this wide shot","expectedCategories":["optics"],"expectedTool":"set_lens_profile"}
+{"id":"defringe","instruction":"remove the purple fringing on the branches","expectedCategories":["optics"],"expectedPatch":{"globals":{"optics":{"defringePurple":50}}},"mode":"absolute"}
+{"id":"auto-tone","instruction":"auto tone this shot","expectedCategories":["tone"],"expectedTool":"auto_tone"}
+{"id":"mono-profile","instruction":"make it black and white","expectedCategories":["tone","color"],"expectedTool":"set_camera_profile"}
+{"id":"calibration-primaries","instruction":"boost the blue primary in the calibration panel","expectedCategories":["color"],"expectedPatch":{"globals":{"calibration":{"blueSat":25}}},"mode":"absolute"}

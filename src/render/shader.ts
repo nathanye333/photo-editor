@@ -94,6 +94,94 @@ float toneMapLuma(float x) {
   return clamp(y, 0.0, 1.0);
 }
 
+/**
+ * Camera calibration: primary hue/saturation tweaks and a shadow tint, applied
+ * before any tone work so it behaves like a profile rather than a colour grade.
+ */
+vec3 applyCalibration(vec3 srgb) {
+  if (uCalOn > 0.5) {
+    vec3 hsl = rgb2hsl(srgb);
+    float centers[3];
+    centers[0] = 0.0;
+    centers[1] = 0.3333;
+    centers[2] = 0.6667;
+    float dh = 0.0;
+    float ds = 0.0;
+    float wsum = 0.0;
+    for (int i = 0; i < 3; i++) {
+      float d = abs(hsl.x - centers[i]);
+      d = min(d, 1.0 - d);
+      float w = clamp(1.0 - d / 0.1667, 0.0, 1.0);
+      dh += w * uCalHue[i];
+      ds += w * uCalSat[i];
+      wsum += w;
+    }
+    if (wsum > 0.0) {
+      dh /= wsum;
+      ds /= wsum;
+    }
+    hsl.x = fract(hsl.x + dh / 300.0);
+    hsl.y = clamp(hsl.y * (1.0 + ds / 100.0), 0.0, 1.0);
+    srgb = hsl2rgb(hsl);
+
+    float tint = uShadowTint / 100.0;
+    if (abs(tint) > 1e-4) {
+      float shadowW = 1.0 - smoothstep(0.0, 0.45, luma(srgb));
+      srgb.g += tint * shadowW * 0.06;
+      srgb.r -= tint * shadowW * 0.03;
+      srgb.b -= tint * shadowW * 0.03;
+    }
+  }
+
+  if (uProfMono > 0.5) {
+    srgb = vec3(luma(srgb));
+  } else if (abs(uProfSat) > 1e-4 || abs(uProfWarmth) > 1e-4) {
+    srgb = mix(vec3(luma(srgb)), srgb, 1.0 + uProfSat / 100.0);
+    srgb.r *= 1.0 + uProfWarmth / 100.0 * 0.08;
+    srgb.b *= 1.0 - uProfWarmth / 100.0 * 0.08;
+  }
+  if (abs(uProfContrast) > 1e-4) {
+    srgb = clamp(mix(vec3(0.5), srgb, 1.0 + uProfContrast / 100.0), 0.0, 1.0);
+  }
+  return clamp(srgb, 0.0, 1.0);
+}
+
+/** One grading wheel: tint toward its hue and lift/drop its luminance. */
+vec3 gradeZone(vec3 c, vec3 wheel, float weight) {
+  if (weight <= 0.0) return c;
+  float sat = wheel.y / 100.0;
+  float lum = wheel.z / 100.0;
+  if (sat > 0.0) {
+    vec3 tint = hsl2rgb(vec3(fract(wheel.x / 360.0), 1.0, 0.5));
+    c += (tint - vec3(0.5)) * sat * weight * 0.6;
+  }
+  return c + vec3(lum * weight * 0.3);
+}
+
+/**
+ * Three-way grading. Balance slides the split point between the shadow and
+ * highlight zones; blending widens the crossfade so zones overlap.
+ */
+vec3 applyColorGrading(vec3 srgb) {
+  if (uGradeOn < 0.5) return srgb;
+  float y = luma(srgb);
+  float spread = mix(0.12, 0.45, clamp(uGradeBlend / 100.0, 0.0, 1.0));
+  float pivot = clamp(0.5 + (uGradeBalance / 100.0) * 0.25, 0.1, 0.9);
+  float wHigh = smoothstep(pivot - spread, pivot + spread, y);
+  float wShadow = 1.0 - wHigh;
+  float wMid = 1.0 - clamp(abs(y - pivot) / (spread + 0.25), 0.0, 1.0);
+  float total = wShadow + wMid + wHigh;
+  if (total > 1e-4) {
+    wShadow /= total;
+    wMid /= total;
+    wHigh /= total;
+  }
+  srgb = gradeZone(srgb, uGradeShadow, wShadow);
+  srgb = gradeZone(srgb, uGradeMid, wMid);
+  srgb = gradeZone(srgb, uGradeHigh, wHigh);
+  return srgb;
+}
+
 /** Per-channel point curves, baked into a 256x1 LUT (rgb composite folded in). */
 vec3 applyPointCurve(vec3 c) {
   if (uCurveLutOn < 0.5) return c;
@@ -105,15 +193,125 @@ vec3 applyPointCurve(vec3 c) {
   );
 }
 
+/** Radial distortion correction about the frame centre, in source UV space. */
+vec2 lensWarp(vec2 uv) {
+  if (abs(uDistortion) < 0.01) return uv;
+  vec2 p = (uv - 0.5) * 2.0;
+  float k = uDistortion / 100.0 * 0.25;
+  return (p * (1.0 + k * dot(p, p))) * 0.5 + 0.5;
+}
+
 vec2 mapCropUv(vec2 outUv) {
-  if (uCropEnabled < 0.5) return outUv;
+  if (uCropEnabled < 0.5) return lensWarp(outUv);
   vec2 center = uCropRect.xy + uCropRect.zw * 0.5;
   vec2 p = uCropRect.xy + outUv * uCropRect.zw;
   vec2 rel = p - center;
   float rad = -uCropAngle;
   float c = cos(rad);
   float s = sin(rad);
-  return vec2(c * rel.x - s * rel.y, s * rel.x + c * rel.y) + center;
+  return lensWarp(vec2(c * rel.x - s * rel.y, s * rel.x + c * rel.y) + center);
+}
+
+/** Lateral CA shows up as red/blue scaling about the centre; undo it on sampling. */
+vec3 sampleSource(vec2 uv) {
+  if (uCA < 0.01) return texture(uImage, uv).rgb;
+  vec2 rel = uv - 0.5;
+  float amount = uCA / 100.0 * 0.004;
+  return vec3(
+    texture(uImage, 0.5 + rel * (1.0 - amount)).r,
+    texture(uImage, uv).g,
+    texture(uImage, 0.5 + rel * (1.0 + amount)).b
+  );
+}
+
+/** Desaturate purple/green fringes, but only where there is a hard edge. */
+vec3 applyDefringe(vec3 c, vec3 near) {
+  if (uDefringeP < 0.01 && uDefringeG < 0.01) return c;
+  float edge = smoothstep(0.02, 0.18, length(c - near));
+  if (edge <= 0.0) return c;
+  float hue = rgb2hsl(c).x;
+  float dPurple = abs(hue - 0.79);
+  dPurple = min(dPurple, 1.0 - dPurple);
+  float dGreen = abs(hue - 0.30);
+  dGreen = min(dGreen, 1.0 - dGreen);
+  float w = (1.0 - smoothstep(0.05, 0.13, dPurple)) * (uDefringeP / 100.0)
+          + (1.0 - smoothstep(0.05, 0.13, dGreen)) * (uDefringeG / 100.0);
+  return mix(c, vec3(luma(c)), clamp(w * edge, 0.0, 1.0));
+}
+
+/** Profile correction brightens the corners; the manual slider then shapes them. */
+float vignetteFactor(vec2 uv) {
+  float manual = uVignette / 100.0;
+  float correct = uProfileVignette / 100.0;
+  if (abs(manual) < 1e-4 && correct < 1e-4) return 1.0;
+  vec2 d = (uv - 0.5) * 2.0;
+  float r = clamp(length(d) / 1.41421356, 0.0, 1.0);
+  float mid = mix(0.05, 0.9, clamp(uVignetteMid / 100.0, 0.0, 1.0));
+  float falloff = smoothstep(mid, 1.0, r);
+  return (1.0 + correct * falloff * 0.55) * (1.0 + manual * falloff);
+}
+
+float hash21(vec2 p) {
+  p = fract(p * vec2(123.34, 456.21));
+  p += dot(p, p + 45.32);
+  return fract(p.x * p.y);
+}
+
+/** Film grain: strongest in the midtones, where real grain is most visible. */
+vec3 applyGrain(vec3 c, vec2 uv) {
+  float amount = uGrainAmount / 100.0;
+  if (amount <= 0.0) return c;
+  float density = mix(0.9, 0.18, clamp(uGrainSize / 100.0, 0.0, 1.0));
+  vec2 cell = uv * vec2(textureSize(uImage, 0)) * density;
+  float rough = clamp(uGrainRough / 100.0, 0.0, 1.0);
+  float n = mix(hash21(floor(cell)), hash21(floor(cell * 2.7) + 11.3), rough * 0.6);
+  float weight = clamp(1.0 - abs(luma(c) - 0.5) * 1.4, 0.15, 1.0);
+  return c + (n - 0.5) * amount * 0.4 * weight;
+}
+
+vec3 blurTaps(vec2 stepUv) {
+  return (
+    texture(uImage, mapCropUv(vUv + vec2(stepUv.x, 0.0))).rgb +
+    texture(uImage, mapCropUv(vUv - vec2(stepUv.x, 0.0))).rgb +
+    texture(uImage, mapCropUv(vUv + vec2(0.0, stepUv.y))).rgb +
+    texture(uImage, mapCropUv(vUv - vec2(0.0, stepUv.y))).rgb
+  ) * 0.25;
+}
+
+/**
+ * Detail stage. The fine band (source minus near blur) drives sharpening,
+ * texture and noise reduction; the mid band drives clarity. Both come from the
+ * source image, so they stay independent of the tone work already applied.
+ */
+vec3 applyDetail(vec3 srgb, vec3 src, vec3 near, vec3 wide) {
+  vec3 fine = src - near;
+  vec3 coarse = near - wide;
+
+  float nr = clamp(uNR / 100.0, 0.0, 1.0);
+  if (nr > 0.0) {
+    float keep = clamp(uNRDetail / 100.0, 0.0, 1.0);
+    srgb -= vec3(luma(fine)) * nr * (1.0 - keep * 0.85);
+  }
+
+  // Colour noise and moiré both live in chroma; pull it toward the wide average.
+  float chromaMix = clamp(uColorNR / 100.0 * 0.85 + uMoire / 100.0 * 0.9, 0.0, 1.0);
+  if (chromaMix > 0.0) {
+    vec3 wideChroma = wide - vec3(luma(wide));
+    srgb = mix(srgb, vec3(luma(srgb)) + wideChroma, chromaMix);
+  }
+
+  float amount = uSharpen / 100.0;
+  if (amount > 0.0) {
+    float masking = clamp(uSharpenMask / 100.0, 0.0, 1.0);
+    float edge = smoothstep(0.0, 0.02 + masking * 0.12, length(fine));
+    float edgeMask = mix(1.0, edge, masking);
+    float detailBoost = mix(0.55, 1.5, clamp(uSharpenDetail / 100.0, 0.0, 1.0));
+    srgb += fine * amount * edgeMask * detailBoost;
+  }
+
+  srgb += fine * (uTexture / 110.0);
+  srgb += coarse * (uClarity / 45.0);
+  return srgb;
 }
 
 vec3 developSample() {
@@ -121,7 +319,10 @@ vec3 developSample() {
   if (uCropEnabled > 0.5 && (srcUv.x < 0.0 || srcUv.x > 1.0 || srcUv.y < 0.0 || srcUv.y > 1.0)) {
     return vec3(0.08);
   }
-  vec3 src = texture(uImage, srcUv).rgb;
+  // The detail bands come from the uncalibrated sample so they stay centred on
+  // zero: blurTaps() does not run the calibration stage.
+  vec3 srcRaw = sampleSource(srcUv);
+  vec3 src = applyCalibration(srcRaw);
   vec3 lin = toLinear(src);
 
   lin *= pow(2.0, uExposure);
@@ -161,21 +362,18 @@ vec3 developSample() {
   float y3 = toneMapLuma(y2);
   if (y2 > 1e-5) srgb *= y3 / y2;
 
+  srgb = applyColorGrading(srgb);
   srgb = applyPointCurve(srgb);
 
   vec2 texel = 1.0 / vec2(textureSize(uImage, 0));
-  vec3 blur = (
-    texture(uImage, mapCropUv(vUv + vec2(texel.x, 0.0))).rgb +
-    texture(uImage, mapCropUv(vUv - vec2(texel.x, 0.0))).rgb +
-    texture(uImage, mapCropUv(vUv + vec2(0.0, texel.y))).rgb +
-    texture(uImage, mapCropUv(vUv - vec2(0.0, texel.y))).rgb
-  ) * 0.25;
-  vec3 detail = toSRGB(toLinear(src)) - blur;
-  srgb = mix(srgb, blur, clamp(uNR / 160.0, 0.0, 0.65));
-  srgb += detail * (uClarity / 80.0);
-  srgb += detail * (uSharpen / 120.0);
-
-  return clamp(srgb, 0.0, 1.0);
+  float radius = mix(0.7, 3.0, clamp(uSharpenRadius / 100.0, 0.0, 1.0));
+  vec3 near = blurTaps(texel * radius);
+  vec3 wide = blurTaps(texel * radius * 3.0);
+  vec3 outColor = applyDetail(srgb, srcRaw, near, wide);
+  outColor = applyDefringe(outColor, near);
+  outColor *= vignetteFactor(vUv);
+  outColor = applyGrain(outColor, vUv);
+  return clamp(outColor, 0.0, 1.0);
 }
 `;
 
@@ -200,13 +398,44 @@ uniform float uCurveDk;
 uniform float uCurveSh;
 uniform sampler2D uCurveLut;
 uniform float uCurveLutOn;
+uniform vec3 uGradeShadow;
+uniform vec3 uGradeMid;
+uniform vec3 uGradeHigh;
+uniform float uGradeBlend;
+uniform float uGradeBalance;
+uniform float uGradeOn;
+uniform float uTexture;
 uniform float uClarity;
 uniform float uDehaze;
 uniform float uSharpen;
+uniform float uSharpenRadius;
+uniform float uSharpenDetail;
+uniform float uSharpenMask;
 uniform float uNR;
+uniform float uNRDetail;
+uniform float uColorNR;
+uniform float uMoire;
 uniform float uCropEnabled;
 uniform vec4 uCropRect;
 uniform float uCropAngle;
+uniform float uCalHue[3];
+uniform float uCalSat[3];
+uniform float uShadowTint;
+uniform float uCalOn;
+uniform float uProfContrast;
+uniform float uProfSat;
+uniform float uProfWarmth;
+uniform float uProfMono;
+uniform float uDistortion;
+uniform float uCA;
+uniform float uDefringeP;
+uniform float uDefringeG;
+uniform float uProfileVignette;
+uniform float uVignette;
+uniform float uVignetteMid;
+uniform float uGrainAmount;
+uniform float uGrainSize;
+uniform float uGrainRough;
 `;
 
 export const FRAG = `#version 300 es

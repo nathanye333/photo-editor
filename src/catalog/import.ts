@@ -1,19 +1,57 @@
+import { analyzePixels, autoWhiteBalance, whiteBalanceFromNeutral } from "../recipe/auto";
 import { applyPatch } from "../recipe/patch";
 import { bitmapFromBlob, bitmapFromRgb, thumbnailFromBitmap } from "../render/preview";
+import { matchLensProfile } from "../render/lensProfiles";
 import { decodeRaw, fileExists, fileUrl, isTauri, writeThumb, type ScannedFile } from "../native";
+import { parseExif, type ExifData } from "./exif";
 import { emptyPhoto, upsertPhoto } from "./store";
 import { fileName, folderOf, photoId, type Photo } from "./types";
 
-function meta(photo: Photo): Photo {
+function meta(photo: Photo, tags: Record<string, string> = {}): Photo {
+  const exif = {
+    file: fileName(photo.path),
+    width: String(photo.width || ""),
+    height: String(photo.height || ""),
+    mtime: photo.mtime ? new Date(photo.mtime * 1000).toISOString() : "",
+    ...tags,
+  };
+  const profile = matchLensProfile(exif);
   return {
     ...photo,
-    exif: {
-      file: fileName(photo.path),
-      width: String(photo.width || ""),
-      height: String(photo.height || ""),
-      mtime: photo.mtime ? new Date(photo.mtime * 1000).toISOString() : "",
-    },
+    exif,
+    recipe: profile
+      ? applyPatch(photo.recipe, { globals: { optics: { profileId: profile.id } } })
+      : photo.recipe,
   };
+}
+
+/**
+ * Raw files carry no baked-in white balance, so seed it: the decoder's own
+ * estimate first, then the DNG as-shot neutral, then a grey-world guess from
+ * the decoded preview.
+ */
+function rawWhiteBalance(
+  decoded: { rgb: number[] | Uint8Array; wb_temp?: number | null; wb_tint?: number | null },
+  exif: ExifData,
+): { temp: number; tint: number } | null {
+  if (decoded.wb_temp != null || decoded.wb_tint != null) {
+    return { temp: decoded.wb_temp ?? 0, tint: decoded.wb_tint ?? 0 };
+  }
+  if (exif.asShotNeutral) return whiteBalanceFromNeutral(exif.asShotNeutral);
+  if (decoded.rgb.length >= 3) return autoWhiteBalance(analyzePixels(decoded.rgb, 3));
+  return null;
+}
+
+/** EXIF lives in the first few KB; reading the whole raw file would be wasteful. */
+const EXIF_HEAD_BYTES = 256 * 1024;
+
+async function readExifTags(blob: Blob): Promise<ExifData> {
+  try {
+    const head = await blob.slice(0, EXIF_HEAD_BYTES).arrayBuffer();
+    return parseExif(new Uint8Array(head));
+  } catch {
+    return { tags: {} };
+  }
 }
 
 async function ingestBitmap(photo: Photo, blob: Blob): Promise<Photo> {
@@ -30,11 +68,16 @@ async function ingestBitmap(photo: Photo, blob: Blob): Promise<Photo> {
   } finally {
     bmp.close();
   }
-  return meta(photo);
+  const exif = await readExifTags(blob);
+  return meta(photo, exif.tags);
 }
 
 async function ingestRaw(photo: Photo, path: string): Promise<Photo> {
   if (!isTauri()) return meta(photo);
+  const exif = await fetch(fileUrl(path))
+    .then((r) => r.blob())
+    .then(readExifTags)
+    .catch(() => ({ tags: {} }) as ExifData);
   const decoded = await decodeRaw(path);
   photo.width = decoded.width;
   photo.height = decoded.height;
@@ -42,18 +85,12 @@ async function ingestRaw(photo: Photo, path: string): Promise<Photo> {
   try {
     const thumb = await thumbnailFromBitmap(bmp);
     photo.thumbPath = await writeThumb(photo.id, new Uint8Array(await thumb.arrayBuffer()));
-    if (decoded.wb_temp != null || decoded.wb_tint != null) {
-      photo.recipe = applyPatch(photo.recipe, {
-        globals: {
-          temp: decoded.wb_temp ?? photo.recipe.globals.temp,
-          tint: decoded.wb_tint ?? photo.recipe.globals.tint,
-        },
-      });
-    }
+    const wb = rawWhiteBalance(decoded, exif);
+    if (wb) photo.recipe = applyPatch(photo.recipe, { globals: wb });
   } finally {
     bmp.close();
   }
-  return meta(photo);
+  return meta(photo, exif.tags);
 }
 
 export async function photosFromScanned(existing: Photo[], files: ScannedFile[]): Promise<Photo[]> {
