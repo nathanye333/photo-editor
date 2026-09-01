@@ -1,3 +1,4 @@
+import { DEFAULT_CAMERA_PROFILE } from "../render/cameraProfiles";
 import { normalizeCrop } from "./crop";
 import { identityPoints } from "./curve";
 import { defaultGlobals, defaultRecipe } from "./defaults";
@@ -10,6 +11,7 @@ import {
   RANGES,
   RECIPE_VERSION,
   type BrushStroke,
+  type Calibration,
   type CatalogPatch,
   type ColorGrading,
   type ColorGradingPatch,
@@ -125,6 +127,24 @@ function applyColorGrading(
   return next;
 }
 
+function applyCalibration(
+  current: Calibration,
+  patch: Partial<Calibration> | undefined,
+  mode: PatchMode,
+): Calibration {
+  const profile = patch?.profile;
+  return {
+    profile: typeof profile === "string" ? profile : (current.profile ?? DEFAULT_CAMERA_PROFILE),
+    shadowTint: applyScalar(current.shadowTint, patch?.shadowTint, mode, RANGES.shadowTint),
+    redHue: applyScalar(current.redHue, patch?.redHue, mode, RANGES.primaryHue),
+    redSat: applyScalar(current.redSat, patch?.redSat, mode, RANGES.primarySat),
+    greenHue: applyScalar(current.greenHue, patch?.greenHue, mode, RANGES.primaryHue),
+    greenSat: applyScalar(current.greenSat, patch?.greenSat, mode, RANGES.primarySat),
+    blueHue: applyScalar(current.blueHue, patch?.blueHue, mode, RANGES.primaryHue),
+    blueSat: applyScalar(current.blueSat, patch?.blueSat, mode, RANGES.primarySat),
+  };
+}
+
 function applyOptics(current: Optics, patch: Partial<Optics> | undefined, mode: PatchMode): Optics {
   const profileId = patch?.profileId;
   return {
@@ -199,6 +219,11 @@ function applyGlobals(current: Globals, patch: GlobalsPatch | undefined, mode: P
       p.colorGrading,
       mode,
     ),
+    calibration: applyCalibration(
+      g.calibration ?? defaultGlobals().calibration,
+      p.calibration,
+      mode,
+    ),
     optics: applyOptics(g.optics ?? defaultGlobals().optics, p.optics, mode),
     effects: applyEffects(g.effects ?? defaultGlobals().effects, p.effects, mode),
     texture: applyScalar(g.texture, p.texture, mode, RANGES.texture),
@@ -234,7 +259,7 @@ function clampMaskParams(params: Partial<Globals> | undefined): Partial<Globals>
   const out: Partial<Globals> = {};
   const scalars: (keyof Omit<
     Globals,
-    "hsl" | "toneCurve" | "colorGrading" | "optics" | "effects"
+    "hsl" | "toneCurve" | "colorGrading" | "calibration" | "optics" | "effects"
   >)[] = [
     "exposure",
     "contrast",

@@ -1,3 +1,4 @@
+import { DEFAULT_CAMERA_PROFILE } from "../render/cameraProfiles";
 import { defaultCrop } from "./crop";
 import { identityPoints } from "./curve";
 import {
@@ -58,6 +59,16 @@ export function defaultGlobals(): Globals {
     noiseReductionDetail: 0,
     colorNoiseReduction: 0,
     moire: 0,
+    calibration: {
+      profile: DEFAULT_CAMERA_PROFILE,
+      shadowTint: 0,
+      redHue: 0,
+      redSat: 0,
+      greenHue: 0,
+      greenSat: 0,
+      blueHue: 0,
+      blueSat: 0,
+    },
     optics: {
       profileId: "",
       distortion: 0,

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createBrushMask, createColorRangeMask, createLuminanceMask, createRadialMask, defaultRecipe } from "./defaults";
 import { applyCatalogPatch, applyPatch, clamp, parseRecipe } from "./patch";
-import { isNeutralGrading, MAX_MASKS } from "./types";
+import { isNeutralCalibration, isNeutralGrading, MAX_MASKS } from "./types";
 
 describe("applyPatch", () => {
   it("sets absolute values and clamps", () => {
@@ -65,6 +65,30 @@ describe("applyPatch", () => {
       globals: { colorGrading: { shadows: { sat: 10 } } },
     });
     expect(isNeutralGrading(graded.globals.colorGrading)).toBe(false);
+  });
+
+  it("keeps the camera profile and clamps calibration sliders", () => {
+    const r = applyPatch(
+      defaultRecipe(),
+      { globals: { calibration: { profile: "landscape", shadowTint: -300, redHue: 20 } } },
+      "absolute",
+    );
+    expect(r.globals.calibration.profile).toBe("landscape");
+    expect(r.globals.calibration.shadowTint).toBe(-100);
+    expect(r.globals.calibration.redHue).toBe(20);
+    expect(r.globals.calibration.blueSat).toBe(0);
+    expect(isNeutralCalibration(r.globals.calibration)).toBe(false);
+  });
+
+  it("treats a bare profile change as neutral calibration", () => {
+    const r = applyPatch(defaultRecipe(), { globals: { calibration: { profile: "mono" } } }, "absolute");
+    expect(isNeutralCalibration(r.globals.calibration)).toBe(true);
+  });
+
+  it("defaults calibration for recipes saved before it existed", () => {
+    const legacy = parseRecipe({ version: 1, globals: { exposure: 0.5 } });
+    expect(legacy.globals.calibration.profile).toBe("color");
+    expect(isNeutralCalibration(legacy.globals.calibration)).toBe(true);
   });
 
   it("keeps optics profile ids and clamps optics sliders", () => {

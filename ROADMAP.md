@@ -85,7 +85,7 @@ Unlock serious workflows: editable RAW and basic framing.
 - [x] Native RAW decode (ffmpeg via Tauri desktop)
 - [x] RAW preview in Library grid and Develop
 - [x] RAW-aware thumbnail generation
-- [ ] White balance from RAW metadata as starting point
+- [x] White balance from RAW metadata as starting point
 
 ### Crop & transform
 
@@ -135,10 +135,10 @@ Fill out panels that exist as stubs or single sliders.
 
 ### Other develop
 
-- [ ] Calibration panel / camera color profiles (Adobe Color, Portrait, B&W, etc.)
+- [x] Calibration panel / camera color profiles (Adobe Color, Portrait, B&W, etc.)
 - [x] Grain
 - [x] Texture (separate from clarity)
-- [ ] Auto tone / one-click enhance
+- [x] Auto tone / one-click enhance
 - [ ] Edit history panel with named snapshots
 
 **Exit criteria:** Full develop panel set comparable to Lightroom's global + optics + detail; no stub messages in Develop UI.

@@ -1,9 +1,11 @@
+import { analyzePixels, type PixelStats } from "../recipe/auto";
 import { defaultRecipe } from "../recipe/defaults";
 import { cropAffectsPixels, cropPixelSize } from "../recipe/crop";
 import { isIdentityToneCurve, LUT_SIZE, toneCurveTexture } from "../recipe/curve";
 import { mergeMaskGlobals } from "../recipe/patch";
 import {
   HSL_CHANNELS,
+  isNeutralCalibration,
   isNeutralGrading,
   MAX_MASKS,
   primaryComponent,
@@ -16,6 +18,7 @@ import {
   type ToneCurve,
 } from "../recipe/types";
 import { rasterizeBrushStrokes, rgbToHueChroma } from "./brushRaster";
+import { cameraProfile } from "./cameraProfiles";
 import { lensProfile } from "./lensProfiles";
 import {
   BLIT_FRAG,
@@ -259,6 +262,11 @@ export class PreviewRenderer {
     return this.image ? { w: this.image.width, h: this.image.height } : null;
   }
 
+  /** Stats over the undeveloped source, so auto tone is not fed its own output. */
+  sourceStats(): PixelStats | null {
+    return this.sourcePixels ? analyzePixels(this.sourcePixels.data, 4) : null;
+  }
+
   /** Sample source image at normalized UV (origin top-left). */
   sampleSource(uvX: number, uvY: number): SourceSample | null {
     const px = this.sourcePixels;
@@ -381,6 +389,16 @@ export class PreviewRenderer {
     gl.uniform1f(loc(gl, program, "uNRDetail"), g.noiseReductionDetail);
     gl.uniform1f(loc(gl, program, "uColorNR"), g.colorNoiseReduction);
     gl.uniform1f(loc(gl, program, "uMoire"), g.moire);
+    const cal = g.calibration;
+    gl.uniform1fv(loc(gl, program, "uCalHue"), [cal.redHue, cal.greenHue, cal.blueHue]);
+    gl.uniform1fv(loc(gl, program, "uCalSat"), [cal.redSat, cal.greenSat, cal.blueSat]);
+    gl.uniform1f(loc(gl, program, "uShadowTint"), cal.shadowTint);
+    gl.uniform1f(loc(gl, program, "uCalOn"), isNeutralCalibration(cal) ? 0 : 1);
+    const camera = cameraProfile(cal.profile);
+    gl.uniform1f(loc(gl, program, "uProfContrast"), camera.contrast);
+    gl.uniform1f(loc(gl, program, "uProfSat"), camera.saturation);
+    gl.uniform1f(loc(gl, program, "uProfWarmth"), camera.warmth);
+    gl.uniform1f(loc(gl, program, "uProfMono"), camera.mono ? 1 : 0);
     const profile = lensProfile(g.optics.profileId);
     gl.uniform1f(loc(gl, program, "uDistortion"), (profile?.distortion ?? 0) + g.optics.distortion);
     gl.uniform1f(loc(gl, program, "uCA"), Math.max(profile?.ca ?? 0, g.optics.ca));

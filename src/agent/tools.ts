@@ -16,6 +16,7 @@ import {
   type Mask,
   type PatchMode,
 } from "../recipe/types";
+import { CAMERA_PROFILES } from "../render/cameraProfiles";
 import { LENS_PROFILES } from "../render/lensProfiles";
 
 const hslChannel = z.object({
@@ -73,6 +74,8 @@ export type AgentActions = {
   getRecipe: () => EditRecipe;
   /** Defaults to delta so tone tools stay iterative; absolute for set-value tools. */
   patchDevelop: (patch: DevelopPatch, mode?: PatchMode) => EditRecipe;
+  /** Analyses the source pixels and commits a tone/white-balance starting point. */
+  autoTone: () => string;
   patchCatalog: (patch: CatalogPatch) => { rating: number; flag: Flag };
   applyPreset: (name: string) => string;
   copySettings: () => void;
@@ -123,6 +126,17 @@ export function createAgentTools(actions: AgentActions) {
             grainRoughness: z.number().optional(),
           })
           .optional(),
+        calibration: z
+          .object({
+            shadowTint: z.number().optional(),
+            redHue: z.number().optional(),
+            redSat: z.number().optional(),
+            greenHue: z.number().optional(),
+            greenSat: z.number().optional(),
+            blueHue: z.number().optional(),
+            blueSat: z.number().optional(),
+          })
+          .optional(),
         hsl: hslPatch.optional(),
         toneCurve: z
           .object({
@@ -136,6 +150,23 @@ export function createAgentTools(actions: AgentActions) {
       execute: async (input) => {
         const recipe = actions.patchDevelop({ globals: input });
         return { ok: true, globals: recipe.globals };
+      },
+    }),
+    auto_tone: tool({
+      description:
+        "Analyse the image and set exposure, contrast, highlights, shadows, whites, blacks and white balance in one step. Use it as a starting point before finer adjustments.",
+      inputSchema: z.object({}),
+      execute: async () => ({ ok: true, result: actions.autoTone() }),
+    }),
+    set_camera_profile: tool({
+      description:
+        "Choose the camera colour profile the render starts from: color (default), portrait (softer contrast, warmer skin), landscape (punchier), neutral (flat), mono (black and white).",
+      inputSchema: z.object({
+        profile: z.enum(CAMERA_PROFILES.map((p) => p.id) as [string, ...string[]]),
+      }),
+      execute: async ({ profile }) => {
+        const recipe = actions.patchDevelop({ globals: { calibration: { profile } } }, "absolute");
+        return { ok: true, calibration: recipe.globals.calibration };
       },
     }),
     set_lens_profile: tool({

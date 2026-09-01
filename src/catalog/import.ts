@@ -1,3 +1,4 @@
+import { analyzePixels, autoWhiteBalance, whiteBalanceFromNeutral } from "../recipe/auto";
 import { applyPatch } from "../recipe/patch";
 import { bitmapFromBlob, bitmapFromRgb, thumbnailFromBitmap } from "../render/preview";
 import { matchLensProfile } from "../render/lensProfiles";
@@ -22,6 +23,23 @@ function meta(photo: Photo, tags: Record<string, string> = {}): Photo {
       ? applyPatch(photo.recipe, { globals: { optics: { profileId: profile.id } } })
       : photo.recipe,
   };
+}
+
+/**
+ * Raw files carry no baked-in white balance, so seed it: the decoder's own
+ * estimate first, then the DNG as-shot neutral, then a grey-world guess from
+ * the decoded preview.
+ */
+function rawWhiteBalance(
+  decoded: { rgb: number[] | Uint8Array; wb_temp?: number | null; wb_tint?: number | null },
+  exif: ExifData,
+): { temp: number; tint: number } | null {
+  if (decoded.wb_temp != null || decoded.wb_tint != null) {
+    return { temp: decoded.wb_temp ?? 0, tint: decoded.wb_tint ?? 0 };
+  }
+  if (exif.asShotNeutral) return whiteBalanceFromNeutral(exif.asShotNeutral);
+  if (decoded.rgb.length >= 3) return autoWhiteBalance(analyzePixels(decoded.rgb, 3));
+  return null;
 }
 
 /** EXIF lives in the first few KB; reading the whole raw file would be wasteful. */
@@ -67,14 +85,8 @@ async function ingestRaw(photo: Photo, path: string): Promise<Photo> {
   try {
     const thumb = await thumbnailFromBitmap(bmp);
     photo.thumbPath = await writeThumb(photo.id, new Uint8Array(await thumb.arrayBuffer()));
-    if (decoded.wb_temp != null || decoded.wb_tint != null) {
-      photo.recipe = applyPatch(photo.recipe, {
-        globals: {
-          temp: decoded.wb_temp ?? photo.recipe.globals.temp,
-          tint: decoded.wb_tint ?? photo.recipe.globals.tint,
-        },
-      });
-    }
+    const wb = rawWhiteBalance(decoded, exif);
+    if (wb) photo.recipe = applyPatch(photo.recipe, { globals: wb });
   } finally {
     bmp.close();
   }

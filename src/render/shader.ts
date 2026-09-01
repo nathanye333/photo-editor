@@ -94,6 +94,58 @@ float toneMapLuma(float x) {
   return clamp(y, 0.0, 1.0);
 }
 
+/**
+ * Camera calibration: primary hue/saturation tweaks and a shadow tint, applied
+ * before any tone work so it behaves like a profile rather than a colour grade.
+ */
+vec3 applyCalibration(vec3 srgb) {
+  if (uCalOn > 0.5) {
+    vec3 hsl = rgb2hsl(srgb);
+    float centers[3];
+    centers[0] = 0.0;
+    centers[1] = 0.3333;
+    centers[2] = 0.6667;
+    float dh = 0.0;
+    float ds = 0.0;
+    float wsum = 0.0;
+    for (int i = 0; i < 3; i++) {
+      float d = abs(hsl.x - centers[i]);
+      d = min(d, 1.0 - d);
+      float w = clamp(1.0 - d / 0.1667, 0.0, 1.0);
+      dh += w * uCalHue[i];
+      ds += w * uCalSat[i];
+      wsum += w;
+    }
+    if (wsum > 0.0) {
+      dh /= wsum;
+      ds /= wsum;
+    }
+    hsl.x = fract(hsl.x + dh / 300.0);
+    hsl.y = clamp(hsl.y * (1.0 + ds / 100.0), 0.0, 1.0);
+    srgb = hsl2rgb(hsl);
+
+    float tint = uShadowTint / 100.0;
+    if (abs(tint) > 1e-4) {
+      float shadowW = 1.0 - smoothstep(0.0, 0.45, luma(srgb));
+      srgb.g += tint * shadowW * 0.06;
+      srgb.r -= tint * shadowW * 0.03;
+      srgb.b -= tint * shadowW * 0.03;
+    }
+  }
+
+  if (uProfMono > 0.5) {
+    srgb = vec3(luma(srgb));
+  } else if (abs(uProfSat) > 1e-4 || abs(uProfWarmth) > 1e-4) {
+    srgb = mix(vec3(luma(srgb)), srgb, 1.0 + uProfSat / 100.0);
+    srgb.r *= 1.0 + uProfWarmth / 100.0 * 0.08;
+    srgb.b *= 1.0 - uProfWarmth / 100.0 * 0.08;
+  }
+  if (abs(uProfContrast) > 1e-4) {
+    srgb = clamp(mix(vec3(0.5), srgb, 1.0 + uProfContrast / 100.0), 0.0, 1.0);
+  }
+  return clamp(srgb, 0.0, 1.0);
+}
+
 /** One grading wheel: tint toward its hue and lift/drop its luminance. */
 vec3 gradeZone(vec3 c, vec3 wheel, float weight) {
   if (weight <= 0.0) return c;
@@ -267,7 +319,10 @@ vec3 developSample() {
   if (uCropEnabled > 0.5 && (srcUv.x < 0.0 || srcUv.x > 1.0 || srcUv.y < 0.0 || srcUv.y > 1.0)) {
     return vec3(0.08);
   }
-  vec3 src = sampleSource(srcUv);
+  // The detail bands come from the uncalibrated sample so they stay centred on
+  // zero: blurTaps() does not run the calibration stage.
+  vec3 srcRaw = sampleSource(srcUv);
+  vec3 src = applyCalibration(srcRaw);
   vec3 lin = toLinear(src);
 
   lin *= pow(2.0, uExposure);
@@ -314,7 +369,7 @@ vec3 developSample() {
   float radius = mix(0.7, 3.0, clamp(uSharpenRadius / 100.0, 0.0, 1.0));
   vec3 near = blurTaps(texel * radius);
   vec3 wide = blurTaps(texel * radius * 3.0);
-  vec3 outColor = applyDetail(srgb, src, near, wide);
+  vec3 outColor = applyDetail(srgb, srcRaw, near, wide);
   outColor = applyDefringe(outColor, near);
   outColor *= vignetteFactor(vUv);
   outColor = applyGrain(outColor, vUv);
@@ -363,6 +418,14 @@ uniform float uMoire;
 uniform float uCropEnabled;
 uniform vec4 uCropRect;
 uniform float uCropAngle;
+uniform float uCalHue[3];
+uniform float uCalSat[3];
+uniform float uShadowTint;
+uniform float uCalOn;
+uniform float uProfContrast;
+uniform float uProfSat;
+uniform float uProfWarmth;
+uniform float uProfMono;
 uniform float uDistortion;
 uniform float uCA;
 uniform float uDefringeP;
