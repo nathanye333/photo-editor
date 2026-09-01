@@ -1,4 +1,4 @@
-import type { Mask, MaskComponent } from "../recipe/types";
+import type { MaskComponent } from "../recipe/types";
 import { handleHitBox } from "./crop";
 
 type RadialComponent = Extract<MaskComponent, { type: "radial" }>;
