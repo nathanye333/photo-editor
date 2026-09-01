@@ -2,6 +2,7 @@ import { generateText, stepCountIs } from "ai";
 import { createOpenAI } from "@ai-sdk/openai";
 import type { HistogramStats } from "../render/preview";
 import type { EditRecipe, Flag } from "../recipe/types";
+import { primaryComponent } from "../recipe/types";
 import type { AppSettings } from "../settings";
 import { CATEGORY_DOCS, routeCategories } from "./router";
 import { createAgentTools, type AgentActions } from "./tools";
@@ -30,7 +31,7 @@ export function buildInstructions(opts: {
         invert: m.invert,
         density: m.density,
         params: m.params,
-        radial: m.components.find((c) => c.type === "radial") ?? null,
+        component: primaryComponent(m),
       })),
     )}`,
     `Catalog: rating=${opts.rating} flag=${opts.flag}`,

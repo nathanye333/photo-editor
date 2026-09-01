@@ -123,6 +123,25 @@ function baseMask(fallbackName: string, fallbackId: string, components: Mask["co
   };
 }
 
+/** Linear gradient mask — full effect at start, fading toward end. */
+export function createLinearMask(
+  partial?: MaskMeta & {
+    start?: [number, number];
+    end?: [number, number];
+    componentFeather?: number;
+  },
+): Mask {
+  const { name, id } = allocName("Linear");
+  return baseMask(name, id, [
+    {
+      type: "linear",
+      start: partial?.start ?? [0.5, 0],
+      end: partial?.end ?? [0.5, 1],
+      feather: partial?.componentFeather ?? 50,
+    },
+  ], partial);
+}
+
 /** Create a radial local-adjustment mask with sensible defaults. */
 export function createRadialMask(
   partial?: MaskMeta & {

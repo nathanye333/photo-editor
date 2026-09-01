@@ -7,7 +7,7 @@ import { emptyPhoto, loadPhotos, loadPresets, openCatalog, savePresetRow, upsert
 import { fileName, type Photo, type Preset } from "./catalog/types";
 import { fileExists, fileUrl, isTauri, pickFolder, pickSaveJpeg, scanFolder, writeFileBytes } from "./native";
 import { applyAspectPreset, cropZoom, defaultCrop, normalizeCrop } from "./recipe/crop";
-import { cloneRecipe, createBrushMask, createColorRangeMask, createLuminanceMask, createRadialMask, defaultRecipe } from "./recipe/defaults";
+import { cloneRecipe, createBrushMask, createColorRangeMask, createLinearMask, createLuminanceMask, createRadialMask, defaultRecipe } from "./recipe/defaults";
 import { autoTone } from "./recipe/auto";
 import { pushHistory, redo, undo } from "./recipe/history";
 import { applyCatalogPatch, applyPatch } from "./recipe/patch";
@@ -341,6 +341,10 @@ export default function App() {
 
   function addRadialMask() {
     addMask(createRadialMask({ params: { exposure: 0.5 } }));
+  }
+
+  function addLinearMask() {
+    addMask(createLinearMask({ params: { exposure: 0.5 } }));
   }
 
   function addBrushMask() {
@@ -887,6 +891,7 @@ export default function App() {
             onResetCrop={onResetCrop}
             onSelectMask={setSelectedMaskId}
             onAddRadialMask={addRadialMask}
+            onAddLinearMask={addLinearMask}
             onAddBrushMask={addBrushMask}
             onAddLuminanceMask={addLuminanceMask}
             onAddColorMask={addColorMask}

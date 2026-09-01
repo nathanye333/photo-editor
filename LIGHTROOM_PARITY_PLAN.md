@@ -61,7 +61,7 @@ Highest-impact develop gap. Schema is ready in `src/recipe/types.ts`.
 
 - [x] Mask UI (create, invert, feather, density; rename/reorder deferred)
 - [x] Radial gradient mask
-- [ ] Linear gradient mask
+- [x] Linear gradient mask
 - [x] Brush mask (paint add/erase on preview; size, hardness, opacity)
 - [x] Luminance range mask (click preview to center range)
 - [x] Color range mask (click preview to sample color)
@@ -72,7 +72,7 @@ Highest-impact develop gap. Schema is ready in `src/recipe/types.ts`.
 
 **Exit criteria:** Apply a radial gradient exposure boost to a subject; see it in preview, undo, export, and via agent. **Met.** Brush / color / luma selection also shipped.
 
-**Still deferred:** linear gradient; semantic/subject AI; canvas drag handles for radial; rename/reorder UI; full per-mask Basic panel; mask overlay visualization.
+**Still deferred:** semantic/subject AI; canvas drag handles for radial/linear; rename/reorder UI; full per-mask Basic panel; mask overlay visualization.
 
 ---
 
