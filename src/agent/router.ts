@@ -91,6 +91,8 @@ const KEYWORDS: Record<ToolCategory, string[]> = {
     "vignette",
     "region",
     "area",
+    "linear",
+    "gradient",
     "luminance",
     "luma",
     "color range",
@@ -111,7 +113,7 @@ export const CATEGORY_DOCS: Record<ToolCategory, string> = {
   catalog: "Catalog: apply_catalog_patch with rating 0-5 and flag pick|reject|unflagged.",
   presets: "Presets: apply_preset by name, reset_recipe, copy_settings.",
   masks:
-    "Masks: upsert_brush_mask (paint stamps), upsert_color_mask (hue/chroma), upsert_luminance_mask (brightness range), upsert_mask (radial), remove_mask. Prefer brush/color/luma for selecting areas.",
+    "Masks: upsert_brush_mask (paint stamps), upsert_color_mask (hue/chroma), upsert_luminance_mask (brightness range), upsert_mask (radial), upsert_linear_mask (gradient line), remove_mask. Prefer brush/color/luma for selecting areas.",
   geometry:
     "Geometry: apply_crop_patch with enabled, normalized x/y/width/height, angle (-45..45), aspect original|1:1|4:5|16:9|custom.",
 };
