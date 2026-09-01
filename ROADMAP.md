@@ -72,7 +72,7 @@ Highest-impact develop gap. Schema is ready in `src/recipe/types.ts`.
 
 **Exit criteria:** Apply a radial gradient exposure boost to a subject; see it in preview, undo, export, and via agent. **Met.** Brush / color / luma selection also shipped.
 
-**Still deferred:** semantic/subject AI; canvas drag handles for radial/linear; rename/reorder UI; full per-mask Basic panel; mask overlay visualization.
+**Still deferred:** semantic/subject AI; rename/reorder UI; full per-mask Basic panel; mask overlay visualization.
 
 ---
 
@@ -139,7 +139,7 @@ Fill out panels that exist as stubs or single sliders.
 - [x] Grain
 - [x] Texture (separate from clarity)
 - [x] Auto tone / one-click enhance
-- [ ] Edit history panel with named snapshots
+- [x] Edit history panel with named snapshots
 
 **Exit criteria:** Full develop panel set comparable to Lightroom's global + optics + detail; no stub messages in Develop UI.
 
@@ -151,10 +151,10 @@ Lightroom's Library module is much richer than grid + filmstrip.
 
 ### Organization
 
-- [ ] Manual collections
+- [x] Manual collections
 - [ ] Smart collections (rule-based: rating, flag, date, camera, etc.)
 - [ ] Quick Collection
-- [ ] Virtual copies (same file, multiple recipes)
+- [x] Virtual copies (same file, multiple recipes)
 - [ ] Photo stacks (burst / bracket grouping)
 - [ ] Color labels (red, yellow, green, blue, purple)
 
@@ -261,10 +261,10 @@ Features where Field intentionally diverges from Lightroom:
 
 ```
 v1    ✅  Globals, library basics, agent, JPEG export
-v1.5  ~   Masks (linear shipped; semantic next)
+v1.5  ✅  Masks (linear + canvas handles shipped; semantic next)
 v1.6  ✅  RAW decode + crop / transform
-v1.7  ~   Develop depth (snapshots remaining)
-v2.0  →   Collections, keywords, culling views, virtual copies
+v1.7  ✅  Develop depth
+v2.0  ~   Collections + virtual copies started; keywords/culling next
 v2.x  →   XMP sidecars, batch export, export presets
 v3+   →   Spot heal, merge tools, tethering, print
 ```

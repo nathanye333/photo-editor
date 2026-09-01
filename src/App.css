@@ -262,6 +262,59 @@ h3 {
   cursor: nesw-resize;
 }
 
+.mask-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.mask-guide {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.mask-handle {
+  position: absolute;
+  display: grid;
+  place-items: center;
+  pointer-events: auto;
+  cursor: grab;
+}
+
+.mask-handle-dot {
+  border-radius: 50%;
+  border: 2px solid var(--accent);
+  background: rgba(255, 255, 255, 0.9);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35);
+}
+
+.snapshot-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.snapshot-row button:first-child {
+  flex: 1;
+  text-align: left;
+}
+
+.btn-icon {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  font-size: 16px;
+  line-height: 1;
+}
+
+.collection-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 6px;
+}
+
 .crop-straighten {
   position: absolute;
   background: var(--accent);

@@ -94,7 +94,7 @@ async function ingestRaw(photo: Photo, path: string): Promise<Photo> {
 }
 
 export async function photosFromScanned(existing: Photo[], files: ScannedFile[]): Promise<Photo[]> {
-  const have = new Set(existing.map((p) => p.path));
+  const have = new Set(existing.filter((p) => !p.masterId).map((p) => p.path));
   const added: Photo[] = [];
   for (const f of files) {
     if (have.has(f.path)) continue;

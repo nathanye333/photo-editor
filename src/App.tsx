@@ -3,15 +3,15 @@ import { runAgentTurn } from "./agent/run";
 import type { AgentActions } from "./agent/tools";
 import { photosFromFileList, photosFromScanned, loadRawPreview } from "./catalog/import";
 import { photoThumbSrc } from "./catalog/media";
-import { emptyPhoto, loadPhotos, loadPresets, openCatalog, savePresetRow, upsertPhoto } from "./catalog/store";
-import { fileName, type Photo, type Preset } from "./catalog/types";
+import { emptyPhoto, loadPhotos, loadPresets, openCatalog, savePresetRow, upsertPhoto, loadSnapshots, saveSnapshotRow, deleteSnapshotRow, loadCollections, saveCollectionRow, loadCollectionPhotoIds, addPhotoToCollection, removePhotoFromCollection, createVirtualCopy } from "./catalog/store";
+import { fileName, photoLabel, type Collection, type Photo, type Preset, type RecipeSnapshot } from "./catalog/types";
 import { fileExists, fileUrl, isTauri, pickFolder, pickSaveJpeg, scanFolder, writeFileBytes } from "./native";
 import { applyAspectPreset, cropZoom, defaultCrop, normalizeCrop } from "./recipe/crop";
 import { cloneRecipe, createBrushMask, createColorRangeMask, createLinearMask, createLuminanceMask, createRadialMask, defaultRecipe } from "./recipe/defaults";
 import { autoTone } from "./recipe/auto";
 import { pushHistory, redo, undo } from "./recipe/history";
 import { applyCatalogPatch, applyPatch } from "./recipe/patch";
-import type { BrushStroke, CatalogPatch, Crop, CropAspect, CropPatch, EditRecipe, Flag, GlobalsPatch, Mask } from "./recipe/types";
+import type { BrushStroke, CatalogPatch, Crop, CropAspect, CropPatch, EditRecipe, Flag, GlobalsPatch, Mask, MaskComponent } from "./recipe/types";
 import { primaryComponent } from "./recipe/types";
 import { bitmapFromBlob, PreviewRenderer, thumbnailFromBitmap, type HistogramStats, type ViewMode } from "./render/preview";
 import { createSampleBitmap } from "./render/sampleImage";
@@ -20,8 +20,9 @@ import { AgentChat, SettingsModal, type ChatMsg } from "./ui/agentChat";
 import { HistogramView, Stars } from "./ui/controls";
 import { CropOverlay } from "./ui/crop";
 import { DevelopPanels } from "./ui/develop";
-import { Filmstrip, FolderList, LibraryGrid, MetaList } from "./ui/library";
+import { Filmstrip, FolderList, LibraryGrid, MetaList, CollectionsList, SnapshotsList } from "./ui/library";
 import type { BrushToolSettings } from "./ui/masks";
+import { MaskOverlay } from "./ui/maskOverlay";
 import "./App.css";
 
 type Module = "library" | "develop";
@@ -42,7 +43,11 @@ export default function App() {
   const [photos, setPhotos] = useState<Photo[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [folder, setFolder] = useState<string | null>(null);
+  const [collectionId, setCollectionId] = useState<string | null>(null);
+  const [collectionMembers, setCollectionMembers] = useState<Record<string, string[]>>({});
   const [presets, setPresets] = useState<Preset[]>([]);
+  const [collections, setCollections] = useState<Collection[]>([]);
+  const [snapshots, setSnapshots] = useState<RecipeSnapshot[]>([]);
   const [clipboard, setClipboard] = useState<EditRecipe | null>(null);
   const [view, setView] = useState<ViewMode>("fit");
   const [before, setBefore] = useState(false);
@@ -94,9 +99,14 @@ export default function App() {
   selectedIdRef.current = selectedId;
 
   const visible = useMemo(() => {
-    const list = folder ? photos.filter((p) => p.folder === folder) : photos;
+    let list = photos;
+    if (folder) list = list.filter((p) => p.folder === folder);
+    if (collectionId) {
+      const ids = new Set(collectionMembers[collectionId] ?? []);
+      list = list.filter((p) => ids.has(p.id));
+    }
     return list;
-  }, [photos, folder]);
+  }, [photos, folder, collectionId, collectionMembers]);
   const folders = useMemo(() => [...new Set(photos.map((p) => p.folder))].sort(), [photos]);
 
   useEffect(() => {
@@ -116,6 +126,13 @@ export default function App() {
       setPhotos(list);
       setSelectedId(list[0].id);
       setPresets(await loadPresets());
+      const cols = await loadCollections();
+      setCollections(cols);
+      const members: Record<string, string[]> = {};
+      for (const c of cols) {
+        members[c.id] = await loadCollectionPhotoIds(c.id);
+      }
+      setCollectionMembers(members);
     })();
     return () => {
       cancelled = true;
@@ -155,6 +172,17 @@ export default function App() {
     setDraftCrop(null);
     setCropFrame(null);
     draftCropRef.current = null;
+    if (!photo?.id) {
+      setSnapshots([]);
+      return;
+    }
+    let cancelled = false;
+    loadSnapshots(photo.id).then((rows) => {
+      if (!cancelled) setSnapshots(rows);
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [photo?.id]);
 
   useEffect(() => {
@@ -688,6 +716,77 @@ export default function App() {
     setPresets((ps) => [...ps.filter((p) => p.id !== preset.id), preset]);
   }
 
+  async function onSaveSnapshot() {
+    const current = photoRef.current;
+    if (!current) return;
+    const name = window.prompt("Snapshot name");
+    if (!name?.trim()) return;
+    const snapshot: RecipeSnapshot = {
+      id: crypto.randomUUID(),
+      photoId: current.id,
+      name: name.trim(),
+      recipe: cloneRecipe(current.recipe),
+      createdAt: Date.now(),
+    };
+    await saveSnapshotRow(snapshot);
+    setSnapshots((rows) => [...rows.filter((s) => s.id !== snapshot.id), snapshot].sort((a, b) => a.createdAt - b.createdAt));
+    setStatus(`Saved snapshot "${snapshot.name}"`);
+  }
+
+  function onApplySnapshot(id: string) {
+    const snap = snapshots.find((s) => s.id === id);
+    if (!snap) return;
+    commitRecipe(cloneRecipe(snap.recipe));
+    setStatus(`Applied snapshot "${snap.name}"`);
+  }
+
+  async function onDeleteSnapshot(id: string) {
+    await deleteSnapshotRow(id);
+    setSnapshots((rows) => rows.filter((s) => s.id !== id));
+  }
+
+  async function onCreateCollection() {
+    const name = window.prompt("Collection name");
+    if (!name?.trim()) return;
+    const collection: Collection = { id: crypto.randomUUID(), name: name.trim() };
+    await saveCollectionRow(collection);
+    setCollections((cols) => [...cols, collection].sort((a, b) => a.name.localeCompare(b.name)));
+    setCollectionMembers((m) => ({ ...m, [collection.id]: [] }));
+    setCollectionId(collection.id);
+    setFolder(null);
+  }
+
+  async function onAddPhotoToCollection() {
+    const current = photoRef.current;
+    if (!current || !collectionId) return;
+    await addPhotoToCollection(collectionId, current.id);
+    setCollectionMembers((m) => ({
+      ...m,
+      [collectionId]: [...new Set([...(m[collectionId] ?? []), current.id])],
+    }));
+    setStatus(`Added to ${collections.find((c) => c.id === collectionId)?.name ?? "collection"}`);
+  }
+
+  async function onRemovePhotoFromCollection() {
+    const current = photoRef.current;
+    if (!current || !collectionId) return;
+    await removePhotoFromCollection(collectionId, current.id);
+    setCollectionMembers((m) => ({
+      ...m,
+      [collectionId]: (m[collectionId] ?? []).filter((id) => id !== current.id),
+    }));
+  }
+
+  async function onCreateVirtualCopy() {
+    const current = photoRef.current;
+    if (!current || current.kind === "sample") return;
+    const copy = createVirtualCopy(current, photos);
+    await upsertPhoto(copy);
+    setPhotos((ps) => [...ps, copy]);
+    setSelectedId(copy.id);
+    setStatus(`Created ${photoLabel(copy)}`);
+  }
+
   function pasteSettings() {
     if (!clipboard) return;
     commitRecipe(cloneRecipe(clipboard));
@@ -728,6 +827,15 @@ export default function App() {
     ? primaryComponent(photo.recipe.masks.find((m) => m.id === selectedMaskId) ?? { id: "", name: "", mode: "add", components: [], invert: false, feather: 50, density: 100, params: {} })
     : null;
   const brushToolActive = mod === "develop" && selectedMaskComp?.type === "brush";
+  const maskOverlayTarget =
+    mod === "develop" &&
+    !before &&
+    !cropToolActive &&
+    photo &&
+    selectedMaskId &&
+    (selectedMaskComp?.type === "radial" || selectedMaskComp?.type === "linear")
+      ? { mask: photo.recipe.masks.find((m) => m.id === selectedMaskId)!, comp: selectedMaskComp }
+      : null;
   const navSrc = photo ? photoThumbSrc(photo) : undefined;
 
   return (
@@ -768,6 +876,9 @@ export default function App() {
         <button type="button" onClick={pasteSettings} disabled={!clipboard}>
           Paste
         </button>
+        <button type="button" onClick={onCreateVirtualCopy} disabled={!photo || photo.kind === "sample"}>
+          Virtual copy
+        </button>
         {photo ? <Stars rating={photo.rating} onRate={(n) => patchCatalog({ rating: n })} /> : null}
         <button type="button" className={agentOpen ? "on" : ""} onClick={() => setAgentOpen((v) => !v)}>
           Agent
@@ -783,7 +894,27 @@ export default function App() {
           <p className="stub">No preview</p>
         )}
         <h3>Folders</h3>
-        <FolderList folders={folders} active={folder} onPick={setFolder} />
+        <FolderList
+          folders={folders}
+          active={folder}
+          onPick={(f) => {
+            setFolder(f);
+            setCollectionId(null);
+          }}
+        />
+        <h3>Collections</h3>
+        <CollectionsList
+          collections={collections}
+          active={collectionId}
+          onPick={(id) => {
+            setCollectionId(id);
+            if (id) setFolder(null);
+          }}
+          onCreate={onCreateCollection}
+          onAddPhoto={onAddPhotoToCollection}
+          onRemovePhoto={onRemovePhotoFromCollection}
+          canManagePhoto={!!photo && photo.kind !== "sample"}
+        />
         {mod === "develop" ? (
           <>
             <h3>Presets</h3>
@@ -799,6 +930,13 @@ export default function App() {
             <button type="button" className="btn-ghost" onClick={onSavePreset}>
               Save preset
             </button>
+            <h3>Snapshots</h3>
+            <SnapshotsList
+              snapshots={snapshots}
+              onApply={onApplySnapshot}
+              onDelete={onDeleteSnapshot}
+              onCreate={onSaveSnapshot}
+            />
           </>
         ) : null}
       </aside>
@@ -832,6 +970,21 @@ export default function App() {
                 scale={cropView.scale}
                 onLive={patchDraftCrop}
                 onCommit={commitDraftCrop}
+              />
+            ) : null}
+            {maskOverlayTarget && previewSize.w > 0 ? (
+              <MaskOverlay
+                component={maskOverlayTarget.comp}
+                width={previewSize.w}
+                height={previewSize.h}
+                scale={cropView.scale}
+                onLive={(next) =>
+                  liveMask({
+                    ...maskOverlayTarget.mask,
+                    components: [next, ...maskOverlayTarget.mask.components.slice(1)],
+                  })
+                }
+                onCommit={commitHistory}
               />
             ) : null}
           </div>

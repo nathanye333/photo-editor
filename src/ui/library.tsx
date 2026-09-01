@@ -1,5 +1,6 @@
-import { fileName, type Photo } from "../catalog/types";
+import { fileName, photoLabel, type Photo } from "../catalog/types";
 import { photoThumbSrc } from "../catalog/media";
+import type { Collection } from "../catalog/types";
 
 export function LibraryGrid(props: {
   photos: Photo[];
@@ -27,7 +28,7 @@ export function LibraryGrid(props: {
               </div>
             )}
             <span className="cell-cap">
-              {fileName(p.path)}
+              {photoLabel(p)}
               {p.rating > 0 ? ` · ${"★".repeat(p.rating)}` : ""}
               {p.flag === "pick" ? " · P" : p.flag === "reject" ? " · X" : ""}
             </span>
@@ -90,6 +91,83 @@ export function FolderList(props: {
   );
 }
 
+export function CollectionsList(props: {
+  collections: Collection[];
+  active: string | null;
+  onPick: (id: string | null) => void;
+  onCreate: () => void;
+  onAddPhoto: () => void;
+  onRemovePhoto: () => void;
+  canManagePhoto: boolean;
+}) {
+  return (
+    <>
+      <ul className="folders">
+        <li>
+          <button
+            type="button"
+            className={props.active === null ? "on" : ""}
+            onClick={() => props.onPick(null)}
+          >
+            All collections
+          </button>
+        </li>
+        {props.collections.map((c) => (
+          <li key={c.id}>
+            <button
+              type="button"
+              className={props.active === c.id ? "on" : ""}
+              onClick={() => props.onPick(c.id)}
+            >
+              {c.name}
+            </button>
+          </li>
+        ))}
+      </ul>
+      <button type="button" className="btn-ghost" onClick={props.onCreate}>
+        New collection
+      </button>
+      {props.active && props.canManagePhoto ? (
+        <div className="collection-actions">
+          <button type="button" className="btn-ghost" onClick={props.onAddPhoto}>
+            Add photo
+          </button>
+          <button type="button" className="btn-ghost" onClick={props.onRemovePhoto}>
+            Remove photo
+          </button>
+        </div>
+      ) : null}
+    </>
+  );
+}
+
+export function SnapshotsList(props: {
+  snapshots: Array<{ id: string; name: string }>;
+  onApply: (id: string) => void;
+  onDelete: (id: string) => void;
+  onCreate: () => void;
+}) {
+  return (
+    <>
+      <ul className="folders">
+        {props.snapshots.map((s) => (
+          <li key={s.id} className="snapshot-row">
+            <button type="button" onClick={() => props.onApply(s.id)}>
+              {s.name}
+            </button>
+            <button type="button" className="btn-icon" title="Delete snapshot" onClick={() => props.onDelete(s.id)}>
+              ×
+            </button>
+          </li>
+        ))}
+      </ul>
+      <button type="button" className="btn-ghost" onClick={props.onCreate}>
+        Save snapshot
+      </button>
+    </>
+  );
+}
+
 export function MetaList({ photo }: { photo: Photo }) {
   const exposure = [photo.exif.ExposureTime, photo.exif.FNumber, photo.exif.ISO && `ISO ${photo.exif.ISO}`]
     .filter(Boolean)
@@ -97,7 +175,7 @@ export function MetaList({ photo }: { photo: Photo }) {
   return (
     <dl className="meta">
       <dt>File</dt>
-      <dd>{fileName(photo.path)}</dd>
+      <dd>{photoLabel(photo)}</dd>
       <dt>Size</dt>
       <dd>{photo.width && photo.height ? `${photo.width} × ${photo.height}` : "—"}</dd>
       {photo.exif.Model ? (
