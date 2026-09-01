@@ -25,6 +25,7 @@ type Props = {
   onToggle: (id: string, alt: boolean) => void;
   onSelect: (id: string) => void;
   onAddRadial: () => void;
+  onAddLinear: () => void;
   onAddBrush: () => void;
   onAddLuminance: () => void;
   onAddColor: () => void;
@@ -47,6 +48,7 @@ export function MasksPanel({
   onToggle,
   onSelect,
   onAddRadial,
+  onAddLinear,
   onAddBrush,
   onAddLuminance,
   onAddColor,
@@ -141,12 +143,15 @@ export function MasksPanel({
         <button type="button" onClick={onAddRadial}>
           Radial
         </button>
+        <button type="button" onClick={onAddLinear}>
+          Linear
+        </button>
         <button type="button" onClick={onRemove} disabled={!selected}>
           Delete
         </button>
       </div>
       {masks.length === 0 ? (
-        <p className="stub">Paint with Brush, or select by Color / Luma. Radial is a soft oval falloff.</p>
+        <p className="stub">Paint with Brush, or select by Color / Luma. Radial is a soft oval; Linear fades along a line.</p>
       ) : (
         <div className="mask-list hsl-ch">
           {masks.map((m) => (
@@ -308,6 +313,86 @@ export function MasksPanel({
             onCommit={onCommit}
             onReset={() => {
               update(updateComponent(selected, { ...component, tolerance: 0.2 }));
+              onCommit();
+            }}
+          />
+          {localParams}
+        </>
+      ) : null}
+
+      {selected && component?.type === "linear" ? (
+        <>
+          {sharedMaskChrome}
+          <Slider
+            label="Feather"
+            value={selected.feather}
+            min={RANGES.maskFeather[0]}
+            max={RANGES.maskFeather[1]}
+            step={1}
+            onChange={(v) => update({ ...selected, feather: v })}
+            onCommit={onCommit}
+            onReset={() => {
+              update({ ...selected, feather: 50 });
+              onCommit();
+            }}
+          />
+          <Slider
+            label="Start X"
+            value={component.start[0]}
+            min={RANGES.maskCoord[0]}
+            max={RANGES.maskCoord[1]}
+            step={0.01}
+            onChange={(v) =>
+              update(updateComponent(selected, { ...component, start: [v, component.start[1]] }))
+            }
+            onCommit={onCommit}
+            onReset={() => {
+              update(updateComponent(selected, { ...component, start: [0.5, component.start[1]] }));
+              onCommit();
+            }}
+          />
+          <Slider
+            label="Start Y"
+            value={component.start[1]}
+            min={RANGES.maskCoord[0]}
+            max={RANGES.maskCoord[1]}
+            step={0.01}
+            onChange={(v) =>
+              update(updateComponent(selected, { ...component, start: [component.start[0], v] }))
+            }
+            onCommit={onCommit}
+            onReset={() => {
+              update(updateComponent(selected, { ...component, start: [component.start[0], 0] }));
+              onCommit();
+            }}
+          />
+          <Slider
+            label="End X"
+            value={component.end[0]}
+            min={RANGES.maskCoord[0]}
+            max={RANGES.maskCoord[1]}
+            step={0.01}
+            onChange={(v) =>
+              update(updateComponent(selected, { ...component, end: [v, component.end[1]] }))
+            }
+            onCommit={onCommit}
+            onReset={() => {
+              update(updateComponent(selected, { ...component, end: [0.5, component.end[1]] }));
+              onCommit();
+            }}
+          />
+          <Slider
+            label="End Y"
+            value={component.end[1]}
+            min={RANGES.maskCoord[0]}
+            max={RANGES.maskCoord[1]}
+            step={0.01}
+            onChange={(v) =>
+              update(updateComponent(selected, { ...component, end: [component.end[0], v] }))
+            }
+            onCommit={onCommit}
+            onReset={() => {
+              update(updateComponent(selected, { ...component, end: [component.end[0], 1] }));
               onCommit();
             }}
           />

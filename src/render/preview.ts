@@ -27,6 +27,7 @@ import {
   VERT,
   WEIGHT_COLOR_FRAG,
   WEIGHT_LUMA_FRAG,
+  WEIGHT_LINEAR_FRAG,
   WEIGHT_RADIAL_FRAG,
 } from "./shader";
 
@@ -118,6 +119,7 @@ function isRenderableComponent(c: MaskComponent | null): boolean {
   return (
     !!c &&
     (c.type === "radial" ||
+      c.type === "linear" ||
       c.type === "brush" ||
       c.type === "luminance_range" ||
       c.type === "color_range")
@@ -130,6 +132,7 @@ export class PreviewRenderer {
   private developProgram: WebGLProgram;
   private mixProgram: WebGLProgram;
   private blitProgram: WebGLProgram;
+  private weightLinearProgram: WebGLProgram;
   private weightRadialProgram: WebGLProgram;
   private weightLumaProgram: WebGLProgram;
   private weightColorProgram: WebGLProgram;
@@ -160,6 +163,7 @@ export class PreviewRenderer {
     this.developProgram = linkProgram(gl, vs, FRAG);
     this.mixProgram = linkProgram(gl, vs, MIX_FRAG);
     this.blitProgram = linkProgram(gl, vs, BLIT_FRAG);
+    this.weightLinearProgram = linkProgram(gl, vs, WEIGHT_LINEAR_FRAG);
     this.weightRadialProgram = linkProgram(gl, vs, WEIGHT_RADIAL_FRAG);
     this.weightLumaProgram = linkProgram(gl, vs, WEIGHT_LUMA_FRAG);
     this.weightColorProgram = linkProgram(gl, vs, WEIGHT_COLOR_FRAG);
@@ -433,6 +437,16 @@ export class PreviewRenderer {
     gl.clearColor(0, 0, 0, 1);
     gl.clear(gl.COLOR_BUFFER_BIT);
     gl.bindVertexArray(this.vao);
+
+    if (component.type === "linear") {
+      gl.useProgram(this.weightLinearProgram);
+      const feather = Math.max(mask.feather, component.feather);
+      gl.uniform2f(loc(gl, this.weightLinearProgram, "uStart"), component.start[0], component.start[1]);
+      gl.uniform2f(loc(gl, this.weightLinearProgram, "uEnd"), component.end[0], component.end[1]);
+      gl.uniform1f(loc(gl, this.weightLinearProgram, "uFeather"), feather);
+      gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+      return;
+    }
 
     if (component.type === "radial") {
       gl.useProgram(this.weightRadialProgram);
