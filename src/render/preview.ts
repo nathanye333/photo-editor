@@ -359,10 +359,17 @@ export class PreviewRenderer {
     gl.uniform1f(loc(gl, program, "uCurveLutOn"), isIdentityToneCurve(g.toneCurve) ? 0 : 1);
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, this.texture);
+    gl.uniform1f(loc(gl, program, "uTexture"), g.texture);
     gl.uniform1f(loc(gl, program, "uClarity"), g.clarity);
     gl.uniform1f(loc(gl, program, "uDehaze"), g.dehaze);
     gl.uniform1f(loc(gl, program, "uSharpen"), g.sharpening);
+    gl.uniform1f(loc(gl, program, "uSharpenRadius"), g.sharpenRadius);
+    gl.uniform1f(loc(gl, program, "uSharpenDetail"), g.sharpenDetail);
+    gl.uniform1f(loc(gl, program, "uSharpenMask"), g.sharpenMasking);
     gl.uniform1f(loc(gl, program, "uNR"), g.noiseReduction);
+    gl.uniform1f(loc(gl, program, "uNRDetail"), g.noiseReductionDetail);
+    gl.uniform1f(loc(gl, program, "uColorNR"), g.colorNoiseReduction);
+    gl.uniform1f(loc(gl, program, "uMoire"), g.moire);
     this.setCropUniforms(program, crop);
   }
 

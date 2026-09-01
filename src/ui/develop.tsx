@@ -92,6 +92,10 @@ export function DevelopPanels({
         {num("blacks", "Blacks", RANGES.blacks, 1)}
         {num("temp", "Temp", RANGES.temp, 1)}
         {num("tint", "Tint", RANGES.tint, 1)}
+        <p className="group-label">Presence</p>
+        {num("texture", "Texture", RANGES.texture, 1)}
+        {num("clarity", "Clarity", RANGES.clarity, 1)}
+        {num("dehaze", "Dehaze", RANGES.dehaze, 1)}
         {num("vibrance", "Vibrance", RANGES.vibrance, 1)}
         {num("saturation", "Saturation", RANGES.saturation, 1)}
       </Panel>
@@ -150,10 +154,16 @@ export function DevelopPanels({
       </Panel>
       <Panel {...panel("grade", "Color Grading")} stub="Global wheels land after v1. Use Temp/Tint and HSL for now." />
       <Panel {...panel("detail", "Detail")}>
-        {num("sharpening", "Sharpening", RANGES.sharpening, 1)}
-        {num("noiseReduction", "Noise Reduction", RANGES.noiseReduction, 1)}
-        {num("clarity", "Clarity", RANGES.clarity, 1)}
-        {num("dehaze", "Dehaze", RANGES.dehaze, 1)}
+        <p className="group-label">Sharpening</p>
+        {num("sharpening", "Amount", RANGES.sharpening, 1)}
+        {num("sharpenRadius", "Radius", RANGES.sharpenRadius, 1)}
+        {num("sharpenDetail", "Detail", RANGES.sharpenDetail, 1)}
+        {num("sharpenMasking", "Masking", RANGES.sharpenMasking, 1)}
+        <p className="group-label">Noise Reduction</p>
+        {num("noiseReduction", "Luminance", RANGES.noiseReduction, 1)}
+        {num("noiseReductionDetail", "Detail", RANGES.noiseReductionDetail, 1)}
+        {num("colorNoiseReduction", "Color", RANGES.colorNoiseReduction, 1)}
+        {num("moire", "Moiré", RANGES.moire, 1)}
       </Panel>
       <MasksPanel
         masks={recipe.masks}

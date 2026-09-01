@@ -122,10 +122,10 @@ Fill out panels that exist as stubs or single sliders.
 
 ### Detail (split controls)
 
-- [ ] Sharpening: amount, radius, detail, masking
-- [ ] Luminance noise reduction
-- [ ] Color noise reduction
-- [ ] Moiré reduction
+- [x] Sharpening: amount, radius, detail, masking
+- [x] Luminance noise reduction
+- [x] Color noise reduction
+- [x] Moiré reduction
 
 ### Tone curve
 
@@ -137,7 +137,7 @@ Fill out panels that exist as stubs or single sliders.
 
 - [ ] Calibration panel / camera color profiles (Adobe Color, Portrait, B&W, etc.)
 - [ ] Grain
-- [ ] Texture (separate from clarity)
+- [x] Texture (separate from clarity)
 - [ ] Auto tone / one-click enhance
 - [ ] Edit history panel with named snapshots
 

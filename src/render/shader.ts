@@ -116,6 +116,51 @@ vec2 mapCropUv(vec2 outUv) {
   return vec2(c * rel.x - s * rel.y, s * rel.x + c * rel.y) + center;
 }
 
+vec3 blurTaps(vec2 stepUv) {
+  return (
+    texture(uImage, mapCropUv(vUv + vec2(stepUv.x, 0.0))).rgb +
+    texture(uImage, mapCropUv(vUv - vec2(stepUv.x, 0.0))).rgb +
+    texture(uImage, mapCropUv(vUv + vec2(0.0, stepUv.y))).rgb +
+    texture(uImage, mapCropUv(vUv - vec2(0.0, stepUv.y))).rgb
+  ) * 0.25;
+}
+
+/**
+ * Detail stage. The fine band (source minus near blur) drives sharpening,
+ * texture and noise reduction; the mid band drives clarity. Both come from the
+ * source image, so they stay independent of the tone work already applied.
+ */
+vec3 applyDetail(vec3 srgb, vec3 src, vec3 near, vec3 wide) {
+  vec3 fine = src - near;
+  vec3 coarse = near - wide;
+
+  float nr = clamp(uNR / 100.0, 0.0, 1.0);
+  if (nr > 0.0) {
+    float keep = clamp(uNRDetail / 100.0, 0.0, 1.0);
+    srgb -= vec3(luma(fine)) * nr * (1.0 - keep * 0.85);
+  }
+
+  // Colour noise and moiré both live in chroma; pull it toward the wide average.
+  float chromaMix = clamp(uColorNR / 100.0 * 0.85 + uMoire / 100.0 * 0.9, 0.0, 1.0);
+  if (chromaMix > 0.0) {
+    vec3 wideChroma = wide - vec3(luma(wide));
+    srgb = mix(srgb, vec3(luma(srgb)) + wideChroma, chromaMix);
+  }
+
+  float amount = uSharpen / 100.0;
+  if (amount > 0.0) {
+    float masking = clamp(uSharpenMask / 100.0, 0.0, 1.0);
+    float edge = smoothstep(0.0, 0.02 + masking * 0.12, length(fine));
+    float edgeMask = mix(1.0, edge, masking);
+    float detailBoost = mix(0.55, 1.5, clamp(uSharpenDetail / 100.0, 0.0, 1.0));
+    srgb += fine * amount * edgeMask * detailBoost;
+  }
+
+  srgb += fine * (uTexture / 110.0);
+  srgb += coarse * (uClarity / 45.0);
+  return srgb;
+}
+
 vec3 developSample() {
   vec2 srcUv = mapCropUv(vUv);
   if (uCropEnabled > 0.5 && (srcUv.x < 0.0 || srcUv.x > 1.0 || srcUv.y < 0.0 || srcUv.y > 1.0)) {
@@ -164,18 +209,10 @@ vec3 developSample() {
   srgb = applyPointCurve(srgb);
 
   vec2 texel = 1.0 / vec2(textureSize(uImage, 0));
-  vec3 blur = (
-    texture(uImage, mapCropUv(vUv + vec2(texel.x, 0.0))).rgb +
-    texture(uImage, mapCropUv(vUv - vec2(texel.x, 0.0))).rgb +
-    texture(uImage, mapCropUv(vUv + vec2(0.0, texel.y))).rgb +
-    texture(uImage, mapCropUv(vUv - vec2(0.0, texel.y))).rgb
-  ) * 0.25;
-  vec3 detail = toSRGB(toLinear(src)) - blur;
-  srgb = mix(srgb, blur, clamp(uNR / 160.0, 0.0, 0.65));
-  srgb += detail * (uClarity / 80.0);
-  srgb += detail * (uSharpen / 120.0);
-
-  return clamp(srgb, 0.0, 1.0);
+  float radius = mix(0.7, 3.0, clamp(uSharpenRadius / 100.0, 0.0, 1.0));
+  vec3 near = blurTaps(texel * radius);
+  vec3 wide = blurTaps(texel * radius * 3.0);
+  return clamp(applyDetail(srgb, src, near, wide), 0.0, 1.0);
 }
 `;
 
@@ -200,10 +237,17 @@ uniform float uCurveDk;
 uniform float uCurveSh;
 uniform sampler2D uCurveLut;
 uniform float uCurveLutOn;
+uniform float uTexture;
 uniform float uClarity;
 uniform float uDehaze;
 uniform float uSharpen;
+uniform float uSharpenRadius;
+uniform float uSharpenDetail;
+uniform float uSharpenMask;
 uniform float uNR;
+uniform float uNRDetail;
+uniform float uColorNR;
+uniform float uMoire;
 uniform float uCropEnabled;
 uniform vec4 uCropRect;
 uniform float uCropAngle;
