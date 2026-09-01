@@ -13,6 +13,9 @@ const KEYWORDS: Record<ToolCategory, string[]> = {
     "stop",
     "lift",
     "crush",
+    "curve",
+    "fade",
+    "matte",
   ],
   color: [
     "warm",
@@ -53,7 +56,8 @@ const KEYWORDS: Record<ToolCategory, string[]> = {
 };
 
 export const CATEGORY_DOCS: Record<ToolCategory, string> = {
-  tone: "Tone: exposure (EV), contrast, highlights, shadows, whites, blacks. Use apply_develop_patch deltas.",
+  tone:
+    "Tone: exposure (EV), contrast, highlights, shadows, whites, blacks, and parametric toneCurve via apply_develop_patch deltas. For an S-curve, a matte fade, or a per-channel cast use set_tone_curve_points (channel rgb|red|green|blue).",
   color:
     "Color: temp/tint (-100..100), vibrance, saturation, hsl.{red,orange,yellow,green,aqua,blue,purple,magenta}.{hue,sat,lum}.",
   detail: "Detail/presence: clarity, dehaze, sharpening, noiseReduction.",

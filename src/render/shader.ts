@@ -94,6 +94,17 @@ float toneMapLuma(float x) {
   return clamp(y, 0.0, 1.0);
 }
 
+/** Per-channel point curves, baked into a 256x1 LUT (rgb composite folded in). */
+vec3 applyPointCurve(vec3 c) {
+  if (uCurveLutOn < 0.5) return c;
+  c = clamp(c, 0.0, 1.0);
+  return vec3(
+    texture(uCurveLut, vec2(c.r, 0.5)).r,
+    texture(uCurveLut, vec2(c.g, 0.5)).g,
+    texture(uCurveLut, vec2(c.b, 0.5)).b
+  );
+}
+
 vec2 mapCropUv(vec2 outUv) {
   if (uCropEnabled < 0.5) return outUv;
   vec2 center = uCropRect.xy + uCropRect.zw * 0.5;
@@ -150,6 +161,8 @@ vec3 developSample() {
   float y3 = toneMapLuma(y2);
   if (y2 > 1e-5) srgb *= y3 / y2;
 
+  srgb = applyPointCurve(srgb);
+
   vec2 texel = 1.0 / vec2(textureSize(uImage, 0));
   vec3 blur = (
     texture(uImage, mapCropUv(vUv + vec2(texel.x, 0.0))).rgb +
@@ -185,6 +198,8 @@ uniform float uCurveHi;
 uniform float uCurveLi;
 uniform float uCurveDk;
 uniform float uCurveSh;
+uniform sampler2D uCurveLut;
+uniform float uCurveLutOn;
 uniform float uClarity;
 uniform float uDehaze;
 uniform float uSharpen;

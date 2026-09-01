@@ -1,6 +1,6 @@
 /** Non-destructive edit recipe — shared source of truth for UI, preview, and agent. */
 
-export const RECIPE_VERSION = 1 as const;
+export const RECIPE_VERSION = 2 as const;
 
 export const HSL_CHANNELS = [
   "red",
@@ -21,13 +21,22 @@ export type HslAdjust = {
   lum: number;
 };
 
+/** Control points in 0–1, sorted by x. Always includes both endpoints. */
+export type CurvePoints = Array<[number, number]>;
+
+export const CURVE_CHANNELS = ["rgb", "red", "green", "blue"] as const;
+
+export type CurveChannel = (typeof CURVE_CHANNELS)[number];
+
+export type CurveChannels = Record<CurveChannel, CurvePoints>;
+
 export type ToneCurve = {
   highlights: number;
   lights: number;
   darks: number;
   shadows: number;
-  /** Control points in 0–1, sorted by x. Always includes endpoints. */
-  points: Array<[number, number]>;
+  /** Point curves. `rgb` is the composite, applied after the per-channel ones. */
+  channels: CurveChannels;
 };
 
 export type CropAspect = "original" | "1:1" | "4:5" | "16:9" | "custom";
@@ -124,7 +133,7 @@ export type PatchMode = "delta" | "absolute";
 export type HslPatch = Partial<Record<HslChannel, Partial<HslAdjust>>>;
 
 export type ToneCurvePatch = Partial<
-  Omit<ToneCurve, "points"> & { points: Array<[number, number]> }
+  Omit<ToneCurve, "channels"> & { channels: Partial<CurveChannels> }
 >;
 
 export type GlobalsPatch = Partial<
@@ -158,6 +167,9 @@ export type CatalogPatch = {
 
 /** Max masks applied in the v1.5 renderer. */
 export const MAX_MASKS = 8;
+
+/** Max control points per point curve. */
+export const MAX_CURVE_POINTS = 16;
 
 export const RANGES = {
   exposure: [-5, 5],

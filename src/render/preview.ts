@@ -1,5 +1,6 @@
 import { defaultRecipe } from "../recipe/defaults";
 import { cropAffectsPixels, cropPixelSize } from "../recipe/crop";
+import { isIdentityToneCurve, LUT_SIZE, toneCurveTexture } from "../recipe/curve";
 import { mergeMaskGlobals } from "../recipe/patch";
 import {
   HSL_CHANNELS,
@@ -10,6 +11,7 @@ import {
   type Globals,
   type Mask,
   type MaskComponent,
+  type ToneCurve,
 } from "../recipe/types";
 import { rasterizeBrushStrokes, rgbToHueChroma } from "./brushRaster";
 import {
@@ -128,6 +130,8 @@ export class PreviewRenderer {
   private vao: WebGLVertexArrayObject;
   private texture: WebGLTexture;
   private brushTex: WebGLTexture;
+  private curveTex: WebGLTexture;
+  private curveKey = "";
   private image: ImageBitmap | null = null;
   private sourcePixels: ImageData | null = null;
   private recipe: EditRecipe = defaultRecipe();
@@ -173,8 +177,9 @@ export class PreviewRenderer {
 
     const tex = gl.createTexture();
     const brushTex = gl.createTexture();
-    if (!tex || !brushTex) throw new Error("tex");
-    for (const t of [tex, brushTex]) {
+    const curveTex = gl.createTexture();
+    if (!tex || !brushTex || !curveTex) throw new Error("tex");
+    for (const t of [tex, brushTex, curveTex]) {
       gl.bindTexture(gl.TEXTURE_2D, t);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
@@ -183,6 +188,29 @@ export class PreviewRenderer {
     }
     this.texture = tex;
     this.brushTex = brushTex;
+    this.curveTex = curveTex;
+  }
+
+  /** Binds the LUT on texture unit 1 and re-uploads it when the curves change. */
+  private bindCurveTexture(curve: ToneCurve) {
+    const gl = this.gl;
+    gl.activeTexture(gl.TEXTURE1);
+    gl.bindTexture(gl.TEXTURE_2D, this.curveTex);
+    const key = JSON.stringify(curve.channels);
+    if (key === this.curveKey) return;
+    this.curveKey = key;
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, 0);
+    gl.texImage2D(
+      gl.TEXTURE_2D,
+      0,
+      gl.RGBA,
+      LUT_SIZE,
+      1,
+      0,
+      gl.RGBA,
+      gl.UNSIGNED_BYTE,
+      toneCurveTexture(curve),
+    );
   }
 
   setHistogramListener(fn: ((h: HistogramStats) => void) | null) {
@@ -326,6 +354,11 @@ export class PreviewRenderer {
     gl.uniform1f(loc(gl, program, "uCurveLi"), g.toneCurve.lights);
     gl.uniform1f(loc(gl, program, "uCurveDk"), g.toneCurve.darks);
     gl.uniform1f(loc(gl, program, "uCurveSh"), g.toneCurve.shadows);
+    this.bindCurveTexture(g.toneCurve);
+    gl.uniform1i(loc(gl, program, "uCurveLut"), 1);
+    gl.uniform1f(loc(gl, program, "uCurveLutOn"), isIdentityToneCurve(g.toneCurve) ? 0 : 1);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, this.texture);
     gl.uniform1f(loc(gl, program, "uClarity"), g.clarity);
     gl.uniform1f(loc(gl, program, "uDehaze"), g.dehaze);
     gl.uniform1f(loc(gl, program, "uSharpen"), g.sharpening);
@@ -551,6 +584,7 @@ export class PreviewRenderer {
     this.resultB = null;
     this.localFbo = null;
     this.weightFbo = null;
+    gl.deleteTexture(this.curveTex);
     this.image?.close();
   }
 }

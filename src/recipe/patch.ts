@@ -1,13 +1,19 @@
 import { normalizeCrop } from "./crop";
+import { identityPoints } from "./curve";
 import { defaultGlobals, defaultRecipe } from "./defaults";
 import {
+  CURVE_CHANNELS,
   HSL_CHANNELS,
+  MAX_CURVE_POINTS,
   MAX_MASKS,
   RANGES,
+  RECIPE_VERSION,
   type BrushStroke,
   type CatalogPatch,
   type Crop,
   type CropPatch,
+  type CurveChannels,
+  type CurvePoints,
   type DevelopPatch,
   type EditRecipe,
   type Flag,
@@ -72,34 +78,34 @@ function applyCurve(
   patch: GlobalsPatch["toneCurve"],
   mode: PatchMode,
 ): ToneCurve {
-  if (!patch) {
-    return {
-      highlights: clamp(current.highlights, RANGES.curve),
-      lights: clamp(current.lights, RANGES.curve),
-      darks: clamp(current.darks, RANGES.curve),
-      shadows: clamp(current.shadows, RANGES.curve),
-      points: normalizePoints(current.points),
-    };
-  }
   return {
-    highlights: applyScalar(current.highlights, patch.highlights, mode, RANGES.curve),
-    lights: applyScalar(current.lights, patch.lights, mode, RANGES.curve),
-    darks: applyScalar(current.darks, patch.darks, mode, RANGES.curve),
-    shadows: applyScalar(current.shadows, patch.shadows, mode, RANGES.curve),
-    points: normalizePoints(patch.points ?? current.points),
+    highlights: applyScalar(current.highlights, patch?.highlights, mode, RANGES.curve),
+    lights: applyScalar(current.lights, patch?.lights, mode, RANGES.curve),
+    darks: applyScalar(current.darks, patch?.darks, mode, RANGES.curve),
+    shadows: applyScalar(current.shadows, patch?.shadows, mode, RANGES.curve),
+    channels: applyCurveChannels(current.channels, patch?.channels),
   };
 }
 
-function normalizePoints(points: Array<[number, number]>): Array<[number, number]> {
-  const pts = points
-    .map(([x, y]) => [clamp(x, [0, 1]), clamp(y, [0, 1])] as [number, number])
-    .sort((a, b) => a[0] - b[0]);
-  if (pts.length < 2) {
-    return [
-      [0, 0],
-      [1, 1],
-    ];
+function applyCurveChannels(
+  current: CurveChannels,
+  patch: Partial<CurveChannels> | undefined,
+): CurveChannels {
+  const next = {} as CurveChannels;
+  for (const ch of CURVE_CHANNELS) {
+    next[ch] = normalizePoints(patch?.[ch] ?? current?.[ch]);
   }
+  return next;
+}
+
+export function normalizePoints(points: CurvePoints | undefined): CurvePoints {
+  if (!Array.isArray(points)) return identityPoints();
+  const pts = points
+    .filter((p): p is [number, number] => Array.isArray(p) && p.length >= 2)
+    .map(([x, y]) => [clamp(num(x, 0), [0, 1]), clamp(num(y, 0), [0, 1])] as [number, number])
+    .sort((a, b) => a[0] - b[0])
+    .slice(0, MAX_CURVE_POINTS);
+  if (pts.length < 2) return identityPoints();
   pts[0][0] = 0;
   pts[pts.length - 1][0] = 1;
   return pts;
@@ -339,6 +345,21 @@ export function applyCatalogPatch(
   };
 }
 
+/** v1 recipes stored a single `points` array; it becomes the composite curve. */
+function migrateToneCurve(raw: unknown): ToneCurve {
+  const base = defaultGlobals().toneCurve;
+  if (!raw || typeof raw !== "object") return base;
+  const curve = raw as Partial<ToneCurve> & { points?: CurvePoints };
+  const channels = curve.channels ?? (curve.points ? { rgb: curve.points } : undefined);
+  return {
+    highlights: num(curve.highlights, base.highlights),
+    lights: num(curve.lights, base.lights),
+    darks: num(curve.darks, base.darks),
+    shadows: num(curve.shadows, base.shadows),
+    channels: applyCurveChannels(base.channels, channels),
+  };
+}
+
 export function parseRecipe(raw: unknown): EditRecipe {
   const fallback = defaultRecipe();
   if (!raw || typeof raw !== "object") return fallback;
@@ -346,8 +367,13 @@ export function parseRecipe(raw: unknown): EditRecipe {
   const g = obj.globals ?? defaultGlobals();
   const legacyAngle = typeof g.cropAngle === "number" ? g.cropAngle : 0;
   const base: EditRecipe = {
-    version: 1,
-    globals: { ...defaultGlobals(), ...g, hsl: { ...defaultGlobals().hsl, ...g.hsl } },
+    version: RECIPE_VERSION,
+    globals: {
+      ...defaultGlobals(),
+      ...g,
+      hsl: { ...defaultGlobals().hsl, ...g.hsl },
+      toneCurve: migrateToneCurve(g.toneCurve),
+    },
     crop: normalizeCrop(obj.crop, legacyAngle),
     masks: Array.isArray(obj.masks) ? (obj.masks as Mask[]) : [],
   };

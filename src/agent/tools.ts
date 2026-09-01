@@ -6,7 +6,15 @@ import {
   createLuminanceMask,
   createRadialMask,
 } from "../recipe/defaults";
-import { primaryComponent, type CatalogPatch, type DevelopPatch, type EditRecipe, type Flag, type Mask } from "../recipe/types";
+import {
+  primaryComponent,
+  type CatalogPatch,
+  type CurvePoints,
+  type DevelopPatch,
+  type EditRecipe,
+  type Flag,
+  type Mask,
+} from "../recipe/types";
 
 const hslChannel = z.object({
   hue: z.number().optional(),
@@ -94,6 +102,23 @@ export function createAgentTools(actions: AgentActions) {
       execute: async (input) => {
         const recipe = actions.patchDevelop({ globals: input });
         return { ok: true, globals: recipe.globals };
+      },
+    }),
+    set_tone_curve_points: tool({
+      description:
+        "Replace the point curve for one channel. Points are [input, output] pairs in 0–1 (origin bottom-left); include both endpoints. Use rgb for a composite S-curve or fade, red/green/blue for colour casts.",
+      inputSchema: z.object({
+        channel: z.enum(["rgb", "red", "green", "blue"]),
+        points: z
+          .array(z.tuple([z.number().min(0).max(1), z.number().min(0).max(1)]))
+          .min(2)
+          .max(16),
+      }),
+      execute: async ({ channel, points }) => {
+        const recipe = actions.patchDevelop({
+          globals: { toneCurve: { channels: { [channel]: points as CurvePoints } } },
+        });
+        return { ok: true, channels: recipe.globals.toneCurve.channels };
       },
     }),
     upsert_mask: tool({

@@ -1,4 +1,5 @@
 import { defaultCrop } from "./crop";
+import { identityPoints } from "./curve";
 import {
   HSL_CHANNELS,
   type BrushStroke,
@@ -29,10 +30,12 @@ export function defaultGlobals(): Globals {
       lights: 0,
       darks: 0,
       shadows: 0,
-      points: [
-        [0, 0],
-        [1, 1],
-      ],
+      channels: {
+        rgb: identityPoints(),
+        red: identityPoints(),
+        green: identityPoints(),
+        blue: identityPoints(),
+      },
     },
     clarity: 0,
     dehaze: 0,

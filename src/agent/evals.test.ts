@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 import { routeCategories } from "./router";
 import { defaultRecipe } from "../recipe/defaults";
 import { applyCatalogPatch, applyPatch } from "../recipe/patch";
-import type { CatalogPatch, DevelopPatch, PatchMode } from "../recipe/types";
+import type { CatalogPatch, CurveChannel, DevelopPatch, PatchMode } from "../recipe/types";
 
 type Case = {
   id: string;
@@ -44,6 +44,9 @@ describe("develop-v1 evals", () => {
         }
         if (c.expectedPatch.globals?.hsl?.orange?.sat !== undefined) {
           expect(next.globals.hsl.orange.sat).toBe(c.expectedPatch.globals.hsl.orange.sat);
+        }
+        for (const [ch, points] of Object.entries(c.expectedPatch.globals?.toneCurve?.channels ?? {})) {
+          expect(next.globals.toneCurve.channels[ch as CurveChannel]).toEqual(points);
         }
         if (c.expectedPatch.masks?.upsert?.length) {
           expect(next.masks).toHaveLength(c.expectedPatch.masks.upsert.length);
