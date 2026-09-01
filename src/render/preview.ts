@@ -4,11 +4,13 @@ import { isIdentityToneCurve, LUT_SIZE, toneCurveTexture } from "../recipe/curve
 import { mergeMaskGlobals } from "../recipe/patch";
 import {
   HSL_CHANNELS,
+  isNeutralGrading,
   MAX_MASKS,
   primaryComponent,
   type Crop,
   type EditRecipe,
   type Globals,
+  type GradeWheel,
   type Mask,
   type MaskComponent,
   type ToneCurve,
@@ -359,6 +361,14 @@ export class PreviewRenderer {
     gl.uniform1f(loc(gl, program, "uCurveLutOn"), isIdentityToneCurve(g.toneCurve) ? 0 : 1);
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, this.texture);
+    const grade = g.colorGrading;
+    const wheel = (w: GradeWheel) => [w.hue, w.sat, w.lum] as const;
+    gl.uniform3f(loc(gl, program, "uGradeShadow"), ...wheel(grade.shadows));
+    gl.uniform3f(loc(gl, program, "uGradeMid"), ...wheel(grade.midtones));
+    gl.uniform3f(loc(gl, program, "uGradeHigh"), ...wheel(grade.highlights));
+    gl.uniform1f(loc(gl, program, "uGradeBlend"), grade.blending);
+    gl.uniform1f(loc(gl, program, "uGradeBalance"), grade.balance);
+    gl.uniform1f(loc(gl, program, "uGradeOn"), isNeutralGrading(grade) ? 0 : 1);
     gl.uniform1f(loc(gl, program, "uTexture"), g.texture);
     gl.uniform1f(loc(gl, program, "uClarity"), g.clarity);
     gl.uniform1f(loc(gl, program, "uDehaze"), g.dehaze);

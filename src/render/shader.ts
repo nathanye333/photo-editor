@@ -94,6 +94,42 @@ float toneMapLuma(float x) {
   return clamp(y, 0.0, 1.0);
 }
 
+/** One grading wheel: tint toward its hue and lift/drop its luminance. */
+vec3 gradeZone(vec3 c, vec3 wheel, float weight) {
+  if (weight <= 0.0) return c;
+  float sat = wheel.y / 100.0;
+  float lum = wheel.z / 100.0;
+  if (sat > 0.0) {
+    vec3 tint = hsl2rgb(vec3(fract(wheel.x / 360.0), 1.0, 0.5));
+    c += (tint - vec3(0.5)) * sat * weight * 0.6;
+  }
+  return c + vec3(lum * weight * 0.3);
+}
+
+/**
+ * Three-way grading. Balance slides the split point between the shadow and
+ * highlight zones; blending widens the crossfade so zones overlap.
+ */
+vec3 applyColorGrading(vec3 srgb) {
+  if (uGradeOn < 0.5) return srgb;
+  float y = luma(srgb);
+  float spread = mix(0.12, 0.45, clamp(uGradeBlend / 100.0, 0.0, 1.0));
+  float pivot = clamp(0.5 + (uGradeBalance / 100.0) * 0.25, 0.1, 0.9);
+  float wHigh = smoothstep(pivot - spread, pivot + spread, y);
+  float wShadow = 1.0 - wHigh;
+  float wMid = 1.0 - clamp(abs(y - pivot) / (spread + 0.25), 0.0, 1.0);
+  float total = wShadow + wMid + wHigh;
+  if (total > 1e-4) {
+    wShadow /= total;
+    wMid /= total;
+    wHigh /= total;
+  }
+  srgb = gradeZone(srgb, uGradeShadow, wShadow);
+  srgb = gradeZone(srgb, uGradeMid, wMid);
+  srgb = gradeZone(srgb, uGradeHigh, wHigh);
+  return srgb;
+}
+
 /** Per-channel point curves, baked into a 256x1 LUT (rgb composite folded in). */
 vec3 applyPointCurve(vec3 c) {
   if (uCurveLutOn < 0.5) return c;
@@ -206,6 +242,7 @@ vec3 developSample() {
   float y3 = toneMapLuma(y2);
   if (y2 > 1e-5) srgb *= y3 / y2;
 
+  srgb = applyColorGrading(srgb);
   srgb = applyPointCurve(srgb);
 
   vec2 texel = 1.0 / vec2(textureSize(uImage, 0));
@@ -237,6 +274,12 @@ uniform float uCurveDk;
 uniform float uCurveSh;
 uniform sampler2D uCurveLut;
 uniform float uCurveLutOn;
+uniform vec3 uGradeShadow;
+uniform vec3 uGradeMid;
+uniform vec3 uGradeHigh;
+uniform float uGradeBlend;
+uniform float uGradeBalance;
+uniform float uGradeOn;
 uniform float uTexture;
 uniform float uClarity;
 uniform float uDehaze;

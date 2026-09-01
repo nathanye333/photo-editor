@@ -20,3 +20,5 @@
 {"id":"texture-smooth-skin","instruction":"smooth skin a little","expectedCategories":["detail","color"],"expectedPatch":{"globals":{"texture":-25}},"mode":"delta"}
 {"id":"sharpen-masking","instruction":"sharpen the eyes but keep it off the skin","expectedCategories":["color","detail"],"expectedPatch":{"globals":{"sharpening":45,"sharpenMasking":60}},"mode":"absolute"}
 {"id":"color-noise","instruction":"clean up the color noise in this high iso shot","expectedCategories":["color","detail"],"expectedPatch":{"globals":{"colorNoiseReduction":40,"noiseReduction":25}},"mode":"absolute"}
+{"id":"teal-orange","instruction":"give it a cinematic teal and orange grade","expectedCategories":["color"],"expectedTool":"apply_color_grading"}
+{"id":"split-tone-shadows","instruction":"split tone the shadows blue","expectedCategories":["tone","color"],"expectedTool":"apply_color_grading"}

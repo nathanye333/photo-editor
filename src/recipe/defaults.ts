@@ -5,12 +5,15 @@ import {
   type BrushStroke,
   type EditRecipe,
   type Globals,
+  type GradeWheel,
   type HslAdjust,
   type Mask,
   RECIPE_VERSION,
 } from "./types";
 
 const zeroHsl = (): HslAdjust => ({ hue: 0, sat: 0, lum: 0 });
+
+const neutralWheel = (): GradeWheel => ({ hue: 0, sat: 0, lum: 0 });
 
 export function defaultGlobals(): Globals {
   return {
@@ -36,6 +39,13 @@ export function defaultGlobals(): Globals {
         green: identityPoints(),
         blue: identityPoints(),
       },
+    },
+    colorGrading: {
+      shadows: neutralWheel(),
+      midtones: neutralWheel(),
+      highlights: neutralWheel(),
+      blending: 50,
+      balance: 0,
     },
     texture: 0,
     clarity: 0,

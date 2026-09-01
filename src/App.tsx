@@ -548,7 +548,8 @@ export default function App() {
 
   const agentActions: AgentActions = {
     getRecipe: () => photoRef.current?.recipe ?? defaultRecipe(),
-    patchDevelop: (patch) => commitRecipe(applyPatch(photoRef.current?.recipe ?? defaultRecipe(), patch, "delta")),
+    patchDevelop: (patch, mode = "delta") =>
+      commitRecipe(applyPatch(photoRef.current?.recipe ?? defaultRecipe(), patch, mode)),
     patchCatalog,
     applyPreset: applyNamedPreset,
     copySettings: () => {

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createBrushMask, createColorRangeMask, createLuminanceMask, createRadialMask, defaultRecipe } from "./defaults";
 import { applyCatalogPatch, applyPatch, clamp } from "./patch";
-import { MAX_MASKS } from "./types";
+import { isNeutralGrading, MAX_MASKS } from "./types";
 
 describe("applyPatch", () => {
   it("sets absolute values and clamps", () => {
@@ -25,6 +25,46 @@ describe("applyPatch", () => {
     );
     expect(r.globals.hsl.orange.sat).toBe(15);
     expect(r.globals.hsl.red.sat).toBe(0);
+  });
+
+  it("patches one colour grading zone at a time", () => {
+    const r = applyPatch(
+      defaultRecipe(),
+      { globals: { colorGrading: { shadows: { hue: 200, sat: 30 }, balance: -20 } } },
+      "absolute",
+    );
+    expect(r.globals.colorGrading.shadows).toEqual({ hue: 200, sat: 30, lum: 0 });
+    expect(r.globals.colorGrading.highlights).toEqual({ hue: 0, sat: 0, lum: 0 });
+    expect(r.globals.colorGrading.balance).toBe(-20);
+    expect(r.globals.colorGrading.blending).toBe(50);
+  });
+
+  it("wraps grading hue and clamps the rest", () => {
+    const r = applyPatch(
+      defaultRecipe(),
+      { globals: { colorGrading: { highlights: { hue: 400, sat: 250, lum: -400 }, blending: 900 } } },
+      "absolute",
+    );
+    expect(r.globals.colorGrading.highlights).toEqual({ hue: 40, sat: 100, lum: -100 });
+    expect(r.globals.colorGrading.blending).toBe(100);
+  });
+
+  it("wraps hue deltas past the ends of the wheel", () => {
+    const base = applyPatch(
+      defaultRecipe(),
+      { globals: { colorGrading: { midtones: { hue: 350 } } } },
+      "absolute",
+    );
+    const r = applyPatch(base, { globals: { colorGrading: { midtones: { hue: 30 } } } }, "delta");
+    expect(r.globals.colorGrading.midtones.hue).toBe(20);
+  });
+
+  it("reads neutral grading as a no-op", () => {
+    expect(isNeutralGrading(defaultRecipe().globals.colorGrading)).toBe(true);
+    const graded = applyPatch(defaultRecipe(), {
+      globals: { colorGrading: { shadows: { sat: 10 } } },
+    });
+    expect(isNeutralGrading(graded.globals.colorGrading)).toBe(false);
   });
 
   it("clamps the split detail controls", () => {
