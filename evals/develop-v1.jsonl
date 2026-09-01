@@ -9,6 +9,7 @@
 {"id":"reject","instruction":"flag this as a reject","expectedCategories":["catalog"],"expectedCatalog":{"flag":"reject"}}
 {"id":"clarity","instruction":"add some clarity","expectedCategories":["detail"],"expectedPatch":{"globals":{"clarity":20}},"mode":"delta"}
 {"id":"radial-center","instruction":"brighten the center with a radial mask","expectedCategories":["masks","tone"],"expectedTool":"upsert_mask","expectedPatch":{"masks":{"upsert":[{"id":"eval-radial","name":"Center","mode":"add","components":[{"type":"radial","cx":0.5,"cy":0.5,"radiusX":0.35,"radiusY":0.35,"feather":50}],"invert":false,"feather":50,"density":100,"params":{"exposure":0.7}}]}},"mode":"absolute"}
+{"id":"linear-sky","instruction":"darken the sky with a linear gradient from top to bottom","expectedCategories":["masks","tone"],"expectedTool":"upsert_linear_mask"}
 {"id":"remove-mask","instruction":"remove the radial mask","expectedCategories":["masks"],"expectedTool":"remove_mask"}
 {"id":"brush-paint","instruction":"paint a brush mask on the subject and brighten it","expectedCategories":["masks","tone"],"expectedTool":"upsert_brush_mask"}
 {"id":"luma-select","instruction":"select the highlights with a luminance mask and pull them down","expectedCategories":["masks","tone"],"expectedTool":"upsert_luminance_mask","expectedPatch":{"masks":{"upsert":[{"id":"eval-luma","name":"Highlights","mode":"add","components":[{"type":"luminance_range","min":0.55,"max":1,"smooth":0.08}],"invert":false,"feather":50,"density":100,"params":{"highlights":-30}}]}},"mode":"absolute"}

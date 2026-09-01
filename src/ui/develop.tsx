@@ -26,6 +26,7 @@ type Props = {
   onResetCrop: () => void;
   onSelectMask: (id: string) => void;
   onAddRadialMask: () => void;
+  onAddLinearMask: () => void;
   onAddBrushMask: () => void;
   onAddLuminanceMask: () => void;
   onAddColorMask: () => void;
@@ -53,6 +54,7 @@ export function DevelopPanels({
   onResetCrop,
   onSelectMask,
   onAddRadialMask,
+  onAddLinearMask,
   onAddBrushMask,
   onAddLuminanceMask,
   onAddColorMask,
@@ -297,6 +299,7 @@ export function DevelopPanels({
         onToggle={onToggle}
         onSelect={onSelectMask}
         onAddRadial={onAddRadialMask}
+        onAddLinear={onAddLinearMask}
         onAddBrush={onAddBrushMask}
         onAddLuminance={onAddLuminanceMask}
         onAddColor={onAddColorMask}

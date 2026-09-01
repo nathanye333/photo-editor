@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createBrushMask, createColorRangeMask, createLuminanceMask, createRadialMask, defaultRecipe } from "./defaults";
+import { createBrushMask, createColorRangeMask, createLinearMask, createLuminanceMask, createRadialMask, defaultRecipe } from "./defaults";
 import { applyCatalogPatch, applyPatch, clamp, parseRecipe } from "./patch";
 import { isNeutralCalibration, isNeutralGrading, MAX_MASKS } from "./types";
 
@@ -166,6 +166,17 @@ describe("applyPatch", () => {
     expect(r.masks[0].id).toBe("r1");
     expect(r.masks[0].params.exposure).toBe(1);
     expect(r.masks[0].components[0]).toMatchObject({ type: "radial", cx: 0.5, cy: 0.5 });
+  });
+
+  it("upserts a linear gradient mask", () => {
+    const mask = createLinearMask({ id: "l1", name: "Sky", params: { exposure: -0.5 } });
+    const r = applyPatch(defaultRecipe(), { masks: { upsert: [mask] } }, "absolute");
+    expect(r.masks).toHaveLength(1);
+    expect(r.masks[0].components[0]).toMatchObject({
+      type: "linear",
+      start: [0.5, 0],
+      end: [0.5, 1],
+    });
   });
 
   it("replaces mask on upsert by id", () => {

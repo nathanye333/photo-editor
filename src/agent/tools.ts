@@ -3,6 +3,7 @@ import { z } from "zod";
 import {
   createBrushMask,
   createColorRangeMask,
+  createLinearMask,
   createLuminanceMask,
   createRadialMask,
 } from "../recipe/defaults";
@@ -86,7 +87,7 @@ export function createAgentTools(actions: AgentActions) {
   return {
     apply_develop_patch: tool({
       description:
-        "Apply relative deltas to global develop params (already stored as absolute values). Prefer small iterative deltas. Do not send pixels. For local adjustments use upsert_mask / upsert_luminance_mask / upsert_color_mask / upsert_brush_mask / remove_mask.",
+        "Apply relative deltas to global develop params (already stored as absolute values). Prefer small iterative deltas. Do not send pixels. For local adjustments use upsert_mask / upsert_linear_mask / upsert_luminance_mask / upsert_color_mask / upsert_brush_mask / remove_mask.",
       inputSchema: z.object({
         exposure: z.number().optional().describe("EV delta, typically ±0.1 to ±1"),
         contrast: z.number().optional(),
@@ -244,6 +245,56 @@ export function createAgentTools(actions: AgentActions) {
           cy: input.cy ?? (prevRadial?.type === "radial" ? prevRadial.cy : undefined),
           radiusX: input.radiusX ?? (prevRadial?.type === "radial" ? prevRadial.radiusX : undefined),
           radiusY: input.radiusY ?? (prevRadial?.type === "radial" ? prevRadial.radiusY : undefined),
+          feather: input.feather ?? current?.feather,
+          density: input.density ?? current?.density,
+          invert: input.invert ?? current?.invert,
+          params: { ...(current?.params ?? {}), ...(input.params ?? {}) },
+        });
+        const recipe = actions.patchDevelop({ masks: { upsert: [mask] } });
+        return { ok: true, maskId: mask.id, masks: summarizeMasks(recipe.masks) };
+      },
+    }),
+    upsert_linear_mask: tool({
+      description:
+        "Create or update a linear gradient local-adjustment mask. Full effect at start, fading toward end. Use startX/startY and endX/endY (0–1 UV, origin top-left).",
+      inputSchema: z.object({
+        id: z.string().optional(),
+        name: z.string().optional(),
+        startX: z.number().min(0).max(1).optional(),
+        startY: z.number().min(0).max(1).optional(),
+        endX: z.number().min(0).max(1).optional(),
+        endY: z.number().min(0).max(1).optional(),
+        feather: z.number().min(0).max(100).optional(),
+        density: z.number().min(0).max(100).optional(),
+        invert: z.boolean().optional(),
+        params: maskParamsSchema.optional(),
+      }),
+      execute: async (input) => {
+        const current = input.id
+          ? actions.getRecipe().masks.find((m) => m.id === input.id)
+          : undefined;
+        const prevLinear = current?.components.find((c) => c.type === "linear");
+        const mask = createLinearMask({
+          id: input.id ?? current?.id,
+          name: input.name ?? current?.name,
+          start:
+            input.startX !== undefined || input.startY !== undefined
+              ? [
+                  input.startX ?? (prevLinear?.type === "linear" ? prevLinear.start[0] : 0.5),
+                  input.startY ?? (prevLinear?.type === "linear" ? prevLinear.start[1] : 0),
+                ]
+              : prevLinear?.type === "linear"
+                ? prevLinear.start
+                : undefined,
+          end:
+            input.endX !== undefined || input.endY !== undefined
+              ? [
+                  input.endX ?? (prevLinear?.type === "linear" ? prevLinear.end[0] : 0.5),
+                  input.endY ?? (prevLinear?.type === "linear" ? prevLinear.end[1] : 1),
+                ]
+              : prevLinear?.type === "linear"
+                ? prevLinear.end
+                : undefined,
           feather: input.feather ?? current?.feather,
           density: input.density ?? current?.density,
           invert: input.invert ?? current?.invert,

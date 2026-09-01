@@ -19,12 +19,29 @@ export type Photo = {
   blobUrl?: string;
   kind: PhotoKind;
   missing?: boolean;
+  /** Set on virtual copies; points at the master photo id. */
+  masterId?: string;
+  /** Display suffix for virtual copies, e.g. "Copy 1". */
+  copyName?: string;
 };
 
 export type Preset = {
   id: string;
   name: string;
   recipe: EditRecipe;
+};
+
+export type RecipeSnapshot = {
+  id: string;
+  photoId: string;
+  name: string;
+  recipe: EditRecipe;
+  createdAt: number;
+};
+
+export type Collection = {
+  id: string;
+  name: string;
 };
 
 export function photoId(path: string): string {
@@ -44,4 +61,13 @@ export function folderOf(path: string): string {
 export function fileName(path: string): string {
   const cut = Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\"));
   return cut >= 0 ? path.slice(cut + 1) : path;
+}
+
+export function photoLabel(photo: Photo): string {
+  const base = fileName(photo.path);
+  return photo.copyName ? `${base} · ${photo.copyName}` : base;
+}
+
+export function isMasterPhoto(photo: Photo): boolean {
+  return !photo.masterId;
 }

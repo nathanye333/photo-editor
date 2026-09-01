@@ -480,6 +480,23 @@ void main() {
 }
 `;
 
+export const WEIGHT_LINEAR_FRAG = `#version 300 es
+precision highp float;
+in vec2 vUv;
+out vec4 fragColor;
+uniform vec2 uStart;
+uniform vec2 uEnd;
+uniform float uFeather;
+void main() {
+  vec2 dir = uEnd - uStart;
+  float len2 = max(dot(dir, dir), 1e-8);
+  float t = clamp(dot(vUv - uStart, dir) / len2, 0.0, 1.0);
+  float feather = clamp(uFeather / 100.0, 0.001, 1.0);
+  float w = 1.0 - smoothstep(1.0 - feather, 1.0, t);
+  fragColor = vec4(w, w, w, 1.0);
+}
+`;
+
 export const WEIGHT_RADIAL_FRAG = `#version 300 es
 precision highp float;
 in vec2 vUv;

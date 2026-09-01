@@ -61,7 +61,7 @@ Highest-impact develop gap. Schema is ready in `src/recipe/types.ts`.
 
 - [x] Mask UI (create, invert, feather, density; rename/reorder deferred)
 - [x] Radial gradient mask
-- [ ] Linear gradient mask
+- [x] Linear gradient mask
 - [x] Brush mask (paint add/erase on preview; size, hardness, opacity)
 - [x] Luminance range mask (click preview to center range)
 - [x] Color range mask (click preview to sample color)
@@ -72,7 +72,7 @@ Highest-impact develop gap. Schema is ready in `src/recipe/types.ts`.
 
 **Exit criteria:** Apply a radial gradient exposure boost to a subject; see it in preview, undo, export, and via agent. **Met.** Brush / color / luma selection also shipped.
 
-**Still deferred:** linear gradient; semantic/subject AI; canvas drag handles for radial; rename/reorder UI; full per-mask Basic panel; mask overlay visualization.
+**Still deferred:** semantic/subject AI; rename/reorder UI; full per-mask Basic panel; mask overlay visualization.
 
 ---
 
@@ -139,7 +139,7 @@ Fill out panels that exist as stubs or single sliders.
 - [ ] Grain
 - [ ] Texture (separate from clarity)
 - [ ] Auto tone / one-click enhance
-- [ ] Edit history panel with named snapshots
+- [x] Edit history panel with named snapshots
 
 **Exit criteria:** Full develop panel set comparable to Lightroom's global + optics + detail; no stub messages in Develop UI.
 
@@ -151,10 +151,10 @@ Lightroom's Library module is much richer than grid + filmstrip.
 
 ### Organization
 
-- [ ] Manual collections
+- [x] Manual collections
 - [ ] Smart collections (rule-based: rating, flag, date, camera, etc.)
 - [ ] Quick Collection
-- [ ] Virtual copies (same file, multiple recipes)
+- [x] Virtual copies (same file, multiple recipes)
 - [ ] Photo stacks (burst / bracket grouping)
 - [ ] Color labels (red, yellow, green, blue, purple)
 
