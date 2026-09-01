@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createBrushMask, createColorRangeMask, createLuminanceMask, createRadialMask, defaultRecipe } from "./defaults";
-import { applyCatalogPatch, applyPatch, clamp } from "./patch";
+import { applyCatalogPatch, applyPatch, clamp, parseRecipe } from "./patch";
 import { isNeutralGrading, MAX_MASKS } from "./types";
 
 describe("applyPatch", () => {
@@ -65,6 +65,34 @@ describe("applyPatch", () => {
       globals: { colorGrading: { shadows: { sat: 10 } } },
     });
     expect(isNeutralGrading(graded.globals.colorGrading)).toBe(false);
+  });
+
+  it("keeps optics profile ids and clamps optics sliders", () => {
+    const r = applyPatch(
+      defaultRecipe(),
+      { globals: { optics: { profileId: "wide-zoom", distortion: -400, ca: 220, defringePurple: 30 } } },
+      "absolute",
+    );
+    expect(r.globals.optics.profileId).toBe("wide-zoom");
+    expect(r.globals.optics.distortion).toBe(-100);
+    expect(r.globals.optics.ca).toBe(100);
+    expect(r.globals.optics.defringePurple).toBe(30);
+    expect(r.globals.optics.defringeGreen).toBe(0);
+  });
+
+  it("keeps effects midpoints when only grain changes", () => {
+    const r = applyPatch(defaultRecipe(), { globals: { effects: { grainAmount: 40 } } }, "absolute");
+    expect(r.globals.effects.grainAmount).toBe(40);
+    expect(r.globals.effects.grainSize).toBe(50);
+    expect(r.globals.effects.vignetteMidpoint).toBe(50);
+    expect(r.globals.effects.vignetteAmount).toBe(0);
+  });
+
+  it("defaults optics and effects for recipes saved before they existed", () => {
+    const legacy = parseRecipe({ version: 1, globals: { exposure: 0.5, lensCorrection: 40 } });
+    expect(legacy.globals.optics.profileId).toBe("");
+    expect(legacy.globals.effects.grainSize).toBe(50);
+    expect(legacy.globals.exposure).toBe(0.5);
   });
 
   it("clamps the split detail controls", () => {

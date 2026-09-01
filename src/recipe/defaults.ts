@@ -58,6 +58,20 @@ export function defaultGlobals(): Globals {
     noiseReductionDetail: 0,
     colorNoiseReduction: 0,
     moire: 0,
+    optics: {
+      profileId: "",
+      distortion: 0,
+      ca: 0,
+      defringePurple: 0,
+      defringeGreen: 0,
+    },
+    effects: {
+      vignetteAmount: 0,
+      vignetteMidpoint: 50,
+      grainAmount: 0,
+      grainSize: 50,
+      grainRoughness: 50,
+    },
     lensCorrection: 0,
     cropAngle: 0,
   };
