@@ -17,3 +17,6 @@
 {"id":"matte-fade","instruction":"give it a matte fade","expectedCategories":["tone"],"expectedTool":"set_tone_curve_points"}
 {"id":"curve-lift-blacks","instruction":"lift the blacks with the curve","expectedCategories":["tone"],"expectedPatch":{"globals":{"toneCurve":{"channels":{"rgb":[[0,0.08],[1,1]]}}}},"mode":"absolute"}
 {"id":"curve-cool-shadows","instruction":"cool the shadows with a blue curve","expectedCategories":["tone","color"],"expectedPatch":{"globals":{"toneCurve":{"channels":{"blue":[[0,0.06],[1,1]]}}}},"mode":"absolute"}
+{"id":"texture-smooth-skin","instruction":"smooth skin a little","expectedCategories":["detail","color"],"expectedPatch":{"globals":{"texture":-25}},"mode":"delta"}
+{"id":"sharpen-masking","instruction":"sharpen the eyes but keep it off the skin","expectedCategories":["color","detail"],"expectedPatch":{"globals":{"sharpening":45,"sharpenMasking":60}},"mode":"absolute"}
+{"id":"color-noise","instruction":"clean up the color noise in this high iso shot","expectedCategories":["color","detail"],"expectedPatch":{"globals":{"colorNoiseReduction":40,"noiseReduction":25}},"mode":"absolute"}

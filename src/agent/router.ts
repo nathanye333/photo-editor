@@ -31,7 +31,20 @@ const KEYWORDS: Record<ToolCategory, string[]> = {
     "skin",
     "color",
   ],
-  detail: ["sharp", "noise", "clarity", "dehaze", "haze", "midtone contrast"],
+  detail: [
+    "sharp",
+    "noise",
+    "grain",
+    "clarity",
+    "texture",
+    "dehaze",
+    "haze",
+    "midtone contrast",
+    "smooth",
+    "smooth skin",
+    "moire",
+    "moiré",
+  ],
   catalog: ["star", "rate", "flag", "pick", "reject", "cull", "rating"],
   presets: ["preset", "reset", "copy settings", "paste", "undo look"],
   masks: [
@@ -60,7 +73,8 @@ export const CATEGORY_DOCS: Record<ToolCategory, string> = {
     "Tone: exposure (EV), contrast, highlights, shadows, whites, blacks, and parametric toneCurve via apply_develop_patch deltas. For an S-curve, a matte fade, or a per-channel cast use set_tone_curve_points (channel rgb|red|green|blue).",
   color:
     "Color: temp/tint (-100..100), vibrance, saturation, hsl.{red,orange,yellow,green,aqua,blue,purple,magenta}.{hue,sat,lum}.",
-  detail: "Detail/presence: clarity, dehaze, sharpening, noiseReduction.",
+  detail:
+    "Detail/presence: texture (fine), clarity (mid), dehaze; sharpening with sharpenRadius/sharpenDetail/sharpenMasking; noiseReduction (luminance) with noiseReductionDetail, plus colorNoiseReduction and moire. Raise sharpenMasking to keep sharpening off skin; negative texture smooths it.",
   catalog: "Catalog: apply_catalog_patch with rating 0-5 and flag pick|reject|unflagged.",
   presets: "Presets: apply_preset by name, reset_recipe, copy_settings.",
   masks:

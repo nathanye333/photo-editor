@@ -27,6 +27,42 @@ describe("applyPatch", () => {
     expect(r.globals.hsl.red.sat).toBe(0);
   });
 
+  it("clamps the split detail controls", () => {
+    const r = applyPatch(
+      defaultRecipe(),
+      {
+        globals: {
+          texture: -300,
+          sharpening: 60,
+          sharpenRadius: 400,
+          sharpenDetail: -20,
+          sharpenMasking: 40,
+          noiseReduction: 30,
+          noiseReductionDetail: 150,
+          colorNoiseReduction: 25,
+          moire: -5,
+        },
+      },
+      "absolute",
+    );
+    expect(r.globals.texture).toBe(-100);
+    expect(r.globals.sharpening).toBe(60);
+    expect(r.globals.sharpenRadius).toBe(100);
+    expect(r.globals.sharpenDetail).toBe(0);
+    expect(r.globals.sharpenMasking).toBe(40);
+    expect(r.globals.noiseReductionDetail).toBe(100);
+    expect(r.globals.colorNoiseReduction).toBe(25);
+    expect(r.globals.moire).toBe(0);
+  });
+
+  it("keeps detail params local to a mask", () => {
+    const mask = createBrushMask({ id: "b1", params: { texture: -40, sharpening: 20 } });
+    const r = applyPatch(defaultRecipe(), { masks: { upsert: [mask] } }, "absolute");
+    expect(r.masks[0].params.texture).toBe(-40);
+    expect(r.masks[0].params.sharpening).toBe(20);
+    expect(r.globals.texture).toBe(0);
+  });
+
   it("does not invent masks", () => {
     expect(applyPatch(defaultRecipe(), { globals: { exposure: 1 } }, "delta").masks).toEqual([]);
   });

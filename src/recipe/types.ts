@@ -66,10 +66,17 @@ export type Globals = {
   saturation: number;
   hsl: Record<HslChannel, HslAdjust>;
   toneCurve: ToneCurve;
+  texture: number;
   clarity: number;
   dehaze: number;
   sharpening: number;
+  sharpenRadius: number;
+  sharpenDetail: number;
+  sharpenMasking: number;
   noiseReduction: number;
+  noiseReductionDetail: number;
+  colorNoiseReduction: number;
+  moire: number;
   /** Placeholder 0–100; unused in v1 renderer. */
   lensCorrection: number;
   /** @deprecated Use recipe.crop.angle — kept for legacy recipes. */
@@ -186,10 +193,17 @@ export const RANGES = {
   hslSat: [-100, 100],
   hslLum: [-100, 100],
   curve: [-100, 100],
+  texture: [-100, 100],
   clarity: [-100, 100],
   dehaze: [-100, 100],
   sharpening: [0, 100],
+  sharpenRadius: [0, 100],
+  sharpenDetail: [0, 100],
+  sharpenMasking: [0, 100],
   noiseReduction: [0, 100],
+  noiseReductionDetail: [0, 100],
+  colorNoiseReduction: [0, 100],
+  moire: [0, 100],
   lensCorrection: [0, 100],
   cropAngle: [-45, 45],
   rating: [0, 5],

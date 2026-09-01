@@ -44,6 +44,7 @@ const maskParamsSchema = z.object({
   tint: z.number().optional(),
   vibrance: z.number().optional(),
   saturation: z.number().optional(),
+  texture: z.number().optional(),
   clarity: z.number().optional(),
   dehaze: z.number().optional(),
 });
@@ -85,10 +86,17 @@ export function createAgentTools(actions: AgentActions) {
         tint: z.number().optional(),
         vibrance: z.number().optional(),
         saturation: z.number().optional(),
-        clarity: z.number().optional(),
+        texture: z.number().optional().describe("Fine detail; positive crisps skin/foliage, negative smooths"),
+        clarity: z.number().optional().describe("Mid-frequency local contrast"),
         dehaze: z.number().optional(),
-        sharpening: z.number().optional(),
-        noiseReduction: z.number().optional(),
+        sharpening: z.number().optional().describe("Sharpening amount 0-100"),
+        sharpenRadius: z.number().optional(),
+        sharpenDetail: z.number().optional(),
+        sharpenMasking: z.number().optional().describe("Restricts sharpening to edges; raise for skin"),
+        noiseReduction: z.number().optional().describe("Luminance noise reduction 0-100"),
+        noiseReductionDetail: z.number().optional().describe("Restores fine structure lost to luminance NR"),
+        colorNoiseReduction: z.number().optional(),
+        moire: z.number().optional(),
         hsl: hslPatch.optional(),
         toneCurve: z
           .object({
