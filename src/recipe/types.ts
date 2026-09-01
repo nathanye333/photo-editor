@@ -232,6 +232,13 @@ export type Flag = "pick" | "reject" | "unflagged";
 export type CatalogPatch = {
   rating?: number;
   flag?: Flag;
+  keywords?: string[];
+  colorLabel?: "red" | "yellow" | "green" | "blue" | "purple" | null;
+  title?: string;
+  caption?: string;
+  copyright?: string;
+  creator?: string;
+  quickCollection?: boolean;
 };
 
 /** Max masks applied in the v1.5 renderer. */

@@ -13,12 +13,12 @@ import {
   type CurvePoints,
   type DevelopPatch,
   type EditRecipe,
-  type Flag,
   type Mask,
   type PatchMode,
 } from "../recipe/types";
 import { CAMERA_PROFILES } from "../render/cameraProfiles";
 import { LENS_PROFILES } from "../render/lensProfiles";
+import type { CatalogFields } from "../catalog/types";
 
 const hslChannel = z.object({
   hue: z.number().optional(),
@@ -77,7 +77,7 @@ export type AgentActions = {
   patchDevelop: (patch: DevelopPatch, mode?: PatchMode) => EditRecipe;
   /** Analyses the source pixels and commits a tone/white-balance starting point. */
   autoTone: () => string;
-  patchCatalog: (patch: CatalogPatch) => { rating: number; flag: Flag };
+  patchCatalog: (patch: CatalogPatch) => CatalogFields;
   applyPreset: (name: string) => string;
   copySettings: () => void;
   resetRecipe: () => EditRecipe;
@@ -437,10 +437,18 @@ export function createAgentTools(actions: AgentActions) {
       },
     }),
     apply_catalog_patch: tool({
-      description: "Set star rating (0-5) and/or pick/reject flag.",
+      description:
+        "Set catalog metadata: rating 0-5, flag pick|reject|unflagged, keywords array, colorLabel, title, caption, copyright, creator, quickCollection.",
       inputSchema: z.object({
         rating: z.number().min(0).max(5).optional(),
         flag: z.enum(["pick", "reject", "unflagged"]).optional(),
+        keywords: z.array(z.string()).optional(),
+        colorLabel: z.enum(["red", "yellow", "green", "blue", "purple"]).nullable().optional(),
+        title: z.string().optional(),
+        caption: z.string().optional(),
+        copyright: z.string().optional(),
+        creator: z.string().optional(),
+        quickCollection: z.boolean().optional(),
       }),
       execute: async (input) => ({ ok: true, ...actions.patchCatalog(input) }),
     }),

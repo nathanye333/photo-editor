@@ -4,13 +4,14 @@ import type { AgentActions } from "./agent/tools";
 import { photosFromFileList, photosFromScanned, loadRawPreview } from "./catalog/import";
 import { photoThumbSrc } from "./catalog/media";
 import { emptyPhoto, loadPhotos, loadPresets, openCatalog, savePresetRow, upsertPhoto, loadSnapshots, saveSnapshotRow, deleteSnapshotRow, loadCollections, saveCollectionRow, loadCollectionPhotoIds, addPhotoToCollection, removePhotoFromCollection, createVirtualCopy } from "./catalog/store";
+import { DEFAULT_LIBRARY_FILTERS, filterPhotos, sortPhotos, type LibraryFilters, type LibrarySort } from "./catalog/filter";
 import { fileName, photoLabel, type Collection, type Photo, type Preset, type RecipeSnapshot } from "./catalog/types";
 import { fileExists, fileUrl, isTauri, pickFolder, pickSaveJpeg, scanFolder, writeFileBytes } from "./native";
 import { applyAspectPreset, cropZoom, defaultCrop, normalizeCrop } from "./recipe/crop";
 import { cloneRecipe, createBrushMask, createColorRangeMask, createLinearMask, createLuminanceMask, createRadialMask, defaultRecipe } from "./recipe/defaults";
 import { autoTone } from "./recipe/auto";
 import { pushHistory, redo, undo } from "./recipe/history";
-import { applyCatalogPatch, applyPatch } from "./recipe/patch";
+import { applyCatalogPatch, applyPatch, defaultCatalogFields } from "./recipe/patch";
 import type { BrushStroke, CatalogPatch, Crop, CropAspect, CropPatch, EditRecipe, Flag, GlobalsPatch, Mask } from "./recipe/types";
 import { primaryComponent } from "./recipe/types";
 import { bitmapFromBlob, PreviewRenderer, thumbnailFromBitmap, type HistogramStats, type ViewMode } from "./render/preview";
@@ -20,7 +21,7 @@ import { AgentChat, SettingsModal, type ChatMsg } from "./ui/agentChat";
 import { HistogramView, Stars } from "./ui/controls";
 import { CropOverlay } from "./ui/crop";
 import { DevelopPanels } from "./ui/develop";
-import { Filmstrip, FolderList, LibraryGrid, MetaList, CollectionsList, SnapshotsList } from "./ui/library";
+import { Filmstrip, FolderList, LibraryGrid, MetaList, CollectionsList, SnapshotsList, LibraryToolbar, CompareView } from "./ui/library";
 import type { BrushToolSettings } from "./ui/masks";
 import { MaskOverlay } from "./ui/maskOverlay";
 import "./App.css";
@@ -87,6 +88,12 @@ export default function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settings, setSettings] = useState<AppSettings>(defaultSettingsSafe);
   const [status, setStatus] = useState("");
+  const [libraryView, setLibraryView] = useState<"grid" | "compare">("grid");
+  const [librarySort, setLibrarySort] = useState<LibrarySort>("filename");
+  const [libraryFilters, setLibraryFilters] = useState<LibraryFilters>(DEFAULT_LIBRARY_FILTERS);
+  const [quickFilterActive, setQuickFilterActive] = useState(false);
+  const [autoAdvance, setAutoAdvance] = useState(true);
+  const [compareSide, setCompareSide] = useState<"left" | "right">("left");
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const hostRef = useRef<HTMLDivElement>(null);
   const rendererRef = useRef<PreviewRenderer | null>(null);
@@ -105,8 +112,11 @@ export default function App() {
       const ids = new Set(collectionMembers[collectionId] ?? []);
       list = list.filter((p) => ids.has(p.id));
     }
-    return list;
-  }, [photos, folder, collectionId, collectionMembers]);
+    if (quickFilterActive) list = list.filter((p) => p.quickCollection);
+    list = filterPhotos(list, libraryFilters);
+    return sortPhotos(list, librarySort);
+  }, [photos, folder, collectionId, collectionMembers, quickFilterActive, libraryFilters, librarySort]);
+  const quickCount = useMemo(() => photos.filter((p) => p.quickCollection).length, [photos]);
   const folders = useMemo(() => [...new Set(photos.map((p) => p.folder))].sort(), [photos]);
 
   useEffect(() => {
@@ -566,10 +576,24 @@ export default function App() {
 
   function patchCatalog(patch: CatalogPatch) {
     const current = photoRef.current;
-    if (!current) return { rating: 0, flag: "unflagged" as Flag };
-    const cat = applyCatalogPatch({ rating: current.rating, flag: current.flag }, patch);
+    if (!current) return defaultCatalogFields();
+    const cat = applyCatalogPatch(current, patch);
     replacePhoto({ ...current, ...cat });
     return cat;
+  }
+
+  function cullFlag(flag: Flag) {
+    patchCatalog({ flag });
+    if (autoAdvance && mod === "library" && libraryView === "compare") {
+      selectRelative(1);
+    }
+  }
+
+  function toggleQuickCollection() {
+    const current = photoRef.current;
+    if (!current) return;
+    patchCatalog({ quickCollection: !current.quickCollection });
+    setStatus(current.quickCollection ? "Removed from Quick Collection" : "Added to Quick Collection");
   }
 
   function applyNamedPreset(name: string) {
@@ -646,19 +670,39 @@ export default function App() {
         setBefore((b) => !b);
         return;
       }
+      if (mod === "library") {
+        const colorKeys: Record<string, NonNullable<CatalogPatch["colorLabel"]>> = {
+          "6": "red",
+          "7": "yellow",
+          "8": "green",
+          "9": "blue",
+          "-": "purple",
+        };
+        if (colorKeys[e.key]) {
+          const current = photoRef.current;
+          if (current) {
+            patchCatalog({ colorLabel: current.colorLabel === colorKeys[e.key] ? null : colorKeys[e.key] });
+          }
+          return;
+        }
+      }
       if (e.key >= "0" && e.key <= "5") {
         patchCatalog({ rating: Number(e.key) });
+        if (autoAdvance && mod === "library" && libraryView === "compare" && e.key !== "0") {
+          selectRelative(1);
+        }
         return;
       }
-      if (e.key === "p" || e.key === "P") patchCatalog({ flag: "pick" });
-      if (e.key === "x" || e.key === "X") patchCatalog({ flag: "reject" });
-      if (e.key === "u" || e.key === "U") patchCatalog({ flag: "unflagged" });
+      if (e.key === "p" || e.key === "P") cullFlag("pick");
+      if (e.key === "x" || e.key === "X") cullFlag("reject");
+      if (e.key === "u" || e.key === "U") cullFlag("unflagged");
+      if (e.key === "b" || e.key === "B") toggleQuickCollection();
       if (e.key === "ArrowRight") selectRelative(1);
       if (e.key === "ArrowLeft") selectRelative(-1);
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [visible, selectedId]);
+  }, [visible, selectedId, mod, libraryView, autoAdvance]);
 
   async function onImportFolder() {
     if (!isTauri()) {
@@ -876,6 +920,9 @@ export default function App() {
         <button type="button" onClick={pasteSettings} disabled={!clipboard}>
           Paste
         </button>
+        <button type="button" onClick={toggleQuickCollection} disabled={!photo || photo.kind === "sample"}>
+          Quick
+        </button>
         <button type="button" onClick={onCreateVirtualCopy} disabled={!photo || photo.kind === "sample"}>
           Virtual copy
         </button>
@@ -906,9 +953,17 @@ export default function App() {
         <CollectionsList
           collections={collections}
           active={collectionId}
+          quickCount={quickCount}
+          quickActive={quickFilterActive}
           onPick={(id) => {
             setCollectionId(id);
+            setQuickFilterActive(false);
             if (id) setFolder(null);
+          }}
+          onQuick={() => {
+            setQuickFilterActive((v) => !v);
+            setCollectionId(null);
+            setFolder(null);
           }}
           onCreate={onCreateCollection}
           onAddPhoto={onAddPhotoToCollection}
@@ -1004,21 +1059,49 @@ export default function App() {
           ) : null}
         </div>
         {mod === "library" ? (
-          <LibraryGrid
-            photos={visible}
-            selectedId={selectedId}
-            onSelect={setSelectedId}
-            onOpen={(id) => {
-              setSelectedId(id);
-              setMod("develop");
-            }}
-          />
+          <>
+            <LibraryToolbar
+              photos={photos}
+              filters={libraryFilters}
+              sort={librarySort}
+              libraryView={libraryView}
+              autoAdvance={autoAdvance}
+              onFilters={setLibraryFilters}
+              onSort={setLibrarySort}
+              onView={setLibraryView}
+              onAutoAdvance={setAutoAdvance}
+            />
+            {libraryView === "grid" ? (
+              <LibraryGrid
+                photos={visible}
+                selectedId={selectedId}
+                onSelect={setSelectedId}
+                onOpen={(id) => {
+                  setSelectedId(id);
+                  setMod("develop");
+                }}
+              />
+            ) : (
+              <CompareView
+                photos={visible}
+                selectedId={selectedId}
+                activeSide={compareSide}
+                onSelectSide={setCompareSide}
+                onSelectPhoto={setSelectedId}
+              />
+            )}
+          </>
         ) : null}
       </main>
 
       <aside className="right">
         <HistogramView stats={hist} />
-        {photo && mod === "library" ? <MetaList photo={photo} /> : null}
+        {photo && mod === "library" ? (
+          <MetaList
+            photo={photo}
+            onPatch={(patch) => patchCatalog(patch)}
+          />
+        ) : null}
         {photo && mod === "develop" ? (
           <DevelopPanels
             recipe={photo.recipe}

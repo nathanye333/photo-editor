@@ -153,25 +153,25 @@ Lightroom's Library module is much richer than grid + filmstrip.
 
 - [x] Manual collections
 - [ ] Smart collections (rule-based: rating, flag, date, camera, etc.)
-- [ ] Quick Collection
+- [x] Quick Collection
 - [x] Virtual copies (same file, multiple recipes)
 - [ ] Photo stacks (burst / bracket grouping)
-- [ ] Color labels (red, yellow, green, blue, purple)
+- [x] Color labels (red, yellow, green, blue, purple)
 
 ### Metadata & search
 
-- [ ] Keywords / tags
-- [ ] Editable metadata (title, caption, copyright, creator)
-- [ ] Advanced filtering (date, camera, lens, ISO, aperture, shutter, focal length)
-- [ ] Sort options (capture date, import date, rating, file name)
-- [ ] Search by keyword or metadata text
+- [x] Keywords / tags
+- [x] Editable metadata (title, caption, copyright, creator)
+- [x] Advanced filtering (rating, flag, camera, lens, color label, keyword search)
+- [x] Sort options (capture date, import date, rating, file name)
+- [x] Search by keyword or metadata text
 
 ### Culling views
 
 - [ ] Loupe view with quick zoom
-- [ ] Compare view (two-up)
+- [x] Compare view (two-up)
 - [ ] Survey view (multi-image grid cull)
-- [ ] Auto-advance on pick / reject during cull
+- [x] Auto-advance on pick / reject during cull
 
 ### Map
 
@@ -264,7 +264,7 @@ v1    ✅  Globals, library basics, agent, JPEG export
 v1.5  ✅  Masks (linear + canvas handles shipped; semantic next)
 v1.6  ✅  RAW decode + crop / transform
 v1.7  ✅  Develop depth
-v2.0  ~   Collections + virtual copies started; keywords/culling next
+v2.0  ~   Keywords, compare cull, filters shipped; survey/loupe/map next
 v2.x  →   XMP sidecars, batch export, export presets
 v3+   →   Spot heal, merge tools, tethering, print
 ```

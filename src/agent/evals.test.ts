@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { routeCategories } from "./router";
 import { defaultRecipe } from "../recipe/defaults";
-import { applyCatalogPatch, applyPatch } from "../recipe/patch";
+import { applyCatalogPatch, applyPatch, defaultCatalogFields } from "../recipe/patch";
 import type { CatalogPatch, CurveChannel, DevelopPatch, PatchMode } from "../recipe/types";
 
 type Case = {
@@ -54,7 +54,7 @@ describe("develop-v1 evals", () => {
         }
       }
       if (c.expectedCatalog) {
-        const next = applyCatalogPatch({ rating: 0, flag: "unflagged" }, c.expectedCatalog);
+        const next = applyCatalogPatch(defaultCatalogFields(), c.expectedCatalog);
         expect(next).toMatchObject(c.expectedCatalog);
       }
     });

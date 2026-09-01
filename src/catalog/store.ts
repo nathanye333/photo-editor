@@ -1,7 +1,7 @@
 import Database from "@tauri-apps/plugin-sql";
 import { initHistory, type RecipeHistory } from "../recipe/history";
 import { cloneRecipe, defaultRecipe } from "../recipe/defaults";
-import { parseCatalogFields, parseRecipe } from "../recipe/patch";
+import { parseCatalogFields, parseRecipe, defaultCatalogFields } from "../recipe/patch";
 import { isTauri } from "../native";
 import {
   folderOf,
@@ -27,6 +27,13 @@ type PhotoRow = {
   kind: string;
   master_id: string | null;
   copy_name: string | null;
+  keywords: string | null;
+  color_label: string | null;
+  title: string | null;
+  caption: string | null;
+  copyright: string | null;
+  creator: string | null;
+  quick_collection: number | null;
 };
 
 let db: Database | null = null;
@@ -37,7 +44,17 @@ let memoryCollections: Collection[] = [];
 let memoryCollectionPhotos: Array<{ collectionId: string; photoId: string }> = [];
 
 function hydrate(row: PhotoRow): Photo {
-  const catalog = parseCatalogFields(row.rating, row.flag);
+  const catalog = parseCatalogFields(
+    row.rating,
+    row.flag,
+    row.keywords,
+    row.color_label,
+    row.title,
+    row.caption,
+    row.copyright,
+    row.creator,
+    row.quick_collection,
+  );
   const recipe = parseRecipe(JSON.parse(row.recipe));
   let history: RecipeHistory;
   try {
@@ -53,8 +70,6 @@ function hydrate(row: PhotoRow): Photo {
     width: row.width,
     height: row.height,
     exif: JSON.parse(row.exif || "{}"),
-    rating: catalog.rating,
-    flag: catalog.flag,
     recipe,
     history,
     folder: row.folder,
@@ -62,10 +77,11 @@ function hydrate(row: PhotoRow): Photo {
     kind: row.kind === "raw" ? "raw" : row.kind === "sample" ? "sample" : "bitmap",
     masterId: row.master_id ?? undefined,
     copyName: row.copy_name ?? undefined,
+    ...catalog,
   };
 }
 
-async function migrateSchema(database: Database): Promise<void> {
+async function migrateV2(database: Database): Promise<void> {
   const cols = await database.select<{ name: string }[]>("PRAGMA table_info(photos)");
   if (cols.some((c) => c.name === "master_id")) return;
 
@@ -96,6 +112,19 @@ async function migrateSchema(database: Database): Promise<void> {
   await database.execute(`ALTER TABLE photos_v2 RENAME TO photos;`);
 }
 
+async function migrateV3(database: Database): Promise<void> {
+  const cols = await database.select<{ name: string }[]>("PRAGMA table_info(photos)");
+  const has = (name: string) => cols.some((c) => c.name === name);
+  if (has("keywords")) return;
+  await database.execute(`ALTER TABLE photos ADD COLUMN keywords TEXT DEFAULT '[]'`);
+  await database.execute(`ALTER TABLE photos ADD COLUMN color_label TEXT`);
+  await database.execute(`ALTER TABLE photos ADD COLUMN title TEXT DEFAULT ''`);
+  await database.execute(`ALTER TABLE photos ADD COLUMN caption TEXT DEFAULT ''`);
+  await database.execute(`ALTER TABLE photos ADD COLUMN copyright TEXT DEFAULT ''`);
+  await database.execute(`ALTER TABLE photos ADD COLUMN creator TEXT DEFAULT ''`);
+  await database.execute(`ALTER TABLE photos ADD COLUMN quick_collection INTEGER DEFAULT 0`);
+}
+
 export async function openCatalog(): Promise<void> {
   if (!isTauri()) return;
   db = await Database.load("sqlite:field.db");
@@ -115,10 +144,18 @@ export async function openCatalog(): Promise<void> {
       thumb_path TEXT,
       kind TEXT DEFAULT 'bitmap',
       master_id TEXT,
-      copy_name TEXT
+      copy_name TEXT,
+      keywords TEXT DEFAULT '[]',
+      color_label TEXT,
+      title TEXT DEFAULT '',
+      caption TEXT DEFAULT '',
+      copyright TEXT DEFAULT '',
+      creator TEXT DEFAULT '',
+      quick_collection INTEGER DEFAULT 0
     );
   `);
-  await migrateSchema(db);
+  await migrateV2(db);
+  await migrateV3(db);
   await db.execute(`
     CREATE TABLE IF NOT EXISTS presets (
       id TEXT PRIMARY KEY,
@@ -166,13 +203,15 @@ export async function upsertPhoto(photo: Photo): Promise<void> {
     return;
   }
   await db.execute(
-    `INSERT INTO photos (id,path,mtime,width,height,exif,rating,flag,recipe,history,folder,thumb_path,kind,master_id,copy_name)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
+    `INSERT INTO photos (id,path,mtime,width,height,exif,rating,flag,recipe,history,folder,thumb_path,kind,master_id,copy_name,keywords,color_label,title,caption,copyright,creator,quick_collection)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)
      ON CONFLICT(id) DO UPDATE SET
        path=excluded.path, mtime=excluded.mtime, width=excluded.width, height=excluded.height,
        exif=excluded.exif, rating=excluded.rating, flag=excluded.flag, recipe=excluded.recipe,
        history=excluded.history, folder=excluded.folder, thumb_path=excluded.thumb_path, kind=excluded.kind,
-       master_id=excluded.master_id, copy_name=excluded.copy_name`,
+       master_id=excluded.master_id, copy_name=excluded.copy_name, keywords=excluded.keywords,
+       color_label=excluded.color_label, title=excluded.title, caption=excluded.caption,
+       copyright=excluded.copyright, creator=excluded.creator, quick_collection=excluded.quick_collection`,
     [
       photo.id,
       photo.path,
@@ -189,6 +228,13 @@ export async function upsertPhoto(photo: Photo): Promise<void> {
       photo.kind,
       photo.masterId ?? null,
       photo.copyName ?? null,
+      JSON.stringify(photo.keywords),
+      photo.colorLabel,
+      photo.title,
+      photo.caption,
+      photo.copyright,
+      photo.creator,
+      photo.quickCollection ? 1 : 0,
     ],
   );
 }
@@ -357,12 +403,11 @@ export function createVirtualCopy(master: Photo, existingCopies: Photo[]): Photo
 export function emptyPhoto(partial: Partial<Photo> & Pick<Photo, "id" | "path">): Photo {
   const recipe = partial.recipe ?? defaultRecipe();
   return {
+    ...defaultCatalogFields(),
     mtime: 0,
     width: 0,
     height: 0,
     exif: {},
-    rating: 0,
-    flag: "unflagged",
     history: initHistory(recipe),
     folder: folderOf(partial.path),
     kind: "bitmap",

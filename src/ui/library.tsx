@@ -1,6 +1,37 @@
-import { fileName, photoLabel, type Photo } from "../catalog/types";
+import type { CSSProperties } from "react";
+import type { Flag } from "../recipe/types";
+import {
+  DEFAULT_LIBRARY_FILTERS,
+  type LibraryFilters,
+  type LibrarySort,
+  uniqueCameras,
+  uniqueLenses,
+} from "../catalog/filter";
+import { fileName, photoLabel, type Collection, type ColorLabel, type Photo } from "../catalog/types";
 import { photoThumbSrc } from "../catalog/media";
-import type { Collection } from "../catalog/types";
+
+export const COLOR_LABELS: ColorLabel[] = ["red", "yellow", "green", "blue", "purple"];
+
+export function colorLabelStyle(label: ColorLabel | null): CSSProperties | undefined {
+  if (!label) return undefined;
+  const colors: Record<ColorLabel, string> = {
+    red: "#e74c3c",
+    yellow: "#f1c40f",
+    green: "#2ecc71",
+    blue: "#3498db",
+    purple: "#9b59b6",
+  };
+  return { background: colors[label] };
+}
+
+function CellBadge({ photo }: { photo: Photo }) {
+  return (
+    <>
+      {photo.colorLabel ? <span className="color-badge" style={colorLabelStyle(photo.colorLabel)} /> : null}
+      {photo.quickCollection ? <span className="quick-badge" title="Quick Collection">Q</span> : null}
+    </>
+  );
+}
 
 export function LibraryGrid(props: {
   photos: Photo[];
@@ -20,6 +51,9 @@ export function LibraryGrid(props: {
             onClick={() => props.onSelect(p.id)}
             onDoubleClick={() => props.onOpen(p.id)}
           >
+            <div className="cell-badges">
+              <CellBadge photo={p} />
+            </div>
             {src && !p.missing ? (
               <img src={src} alt={fileName(p.path)} />
             ) : (
@@ -35,6 +69,182 @@ export function LibraryGrid(props: {
           </button>
         );
       })}
+    </div>
+  );
+}
+
+export function CompareView(props: {
+  photos: Photo[];
+  selectedId: string | null;
+  activeSide: "left" | "right";
+  onSelectSide: (side: "left" | "right") => void;
+  onSelectPhoto: (id: string) => void;
+}) {
+  const index = Math.max(0, props.photos.findIndex((p) => p.id === props.selectedId));
+  const left = props.photos[index] ?? null;
+  const right = props.photos[index + 1] ?? props.photos[0] ?? null;
+
+  function pane(photo: Photo | null, side: "left" | "right") {
+    if (!photo) return <div className="compare-pane empty">No photo</div>;
+    const src = photoThumbSrc(photo);
+    return (
+      <button
+        type="button"
+        className={`compare-pane${props.activeSide === side ? " active" : ""}`}
+        onClick={() => {
+          props.onSelectSide(side);
+          props.onSelectPhoto(photo.id);
+        }}
+      >
+        {src && !photo.missing ? <img src={src} alt="" /> : <div className="cell-miss">—</div>}
+        <span className="compare-cap">
+          {photoLabel(photo)}
+          {photo.rating > 0 ? ` · ${"★".repeat(photo.rating)}` : ""}
+          {photo.flag === "pick" ? " · P" : photo.flag === "reject" ? " · X" : ""}
+        </span>
+      </button>
+    );
+  }
+
+  return (
+    <div className="compare-view">
+      {pane(left, "left")}
+      {pane(right, "right")}
+    </div>
+  );
+}
+
+export function LibraryToolbar(props: {
+  photos: Photo[];
+  filters: LibraryFilters;
+  sort: LibrarySort;
+  libraryView: "grid" | "compare";
+  autoAdvance: boolean;
+  onFilters: (next: LibraryFilters) => void;
+  onSort: (sort: LibrarySort) => void;
+  onView: (view: "grid" | "compare") => void;
+  onAutoAdvance: (on: boolean) => void;
+}) {
+  const cameras = uniqueCameras(props.photos);
+  const lenses = uniqueLenses(props.photos);
+  return (
+    <div className="library-toolbar">
+      <input
+        className="lib-search"
+        placeholder="Search keywords, metadata…"
+        value={props.filters.text}
+        onChange={(e) => props.onFilters({ ...props.filters, text: e.target.value })}
+      />
+      <label>
+        Min ★
+        <select
+          value={props.filters.minRating}
+          onChange={(e) => props.onFilters({ ...props.filters, minRating: Number(e.target.value) })}
+        >
+          {[0, 1, 2, 3, 4, 5].map((n) => (
+            <option key={n} value={n}>
+              {n === 0 ? "Any" : n}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label>
+        Flag
+        <select
+          value={props.filters.flag}
+          onChange={(e) => props.onFilters({ ...props.filters, flag: e.target.value as Flag | "any" })}
+        >
+          <option value="any">Any</option>
+          <option value="pick">Pick</option>
+          <option value="reject">Reject</option>
+          <option value="unflagged">Unflagged</option>
+        </select>
+      </label>
+      <label>
+        Camera
+        <select
+          value={props.filters.camera}
+          onChange={(e) => props.onFilters({ ...props.filters, camera: e.target.value })}
+        >
+          <option value="">Any</option>
+          {cameras.map((c) => (
+            <option key={c} value={c}>
+              {c}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label>
+        Lens
+        <select
+          value={props.filters.lens}
+          onChange={(e) => props.onFilters({ ...props.filters, lens: e.target.value })}
+        >
+          <option value="">Any</option>
+          {lenses.map((l) => (
+            <option key={l} value={l}>
+              {l}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label>
+        Label
+        <select
+          value={props.filters.colorLabel}
+          onChange={(e) =>
+            props.onFilters({
+              ...props.filters,
+              colorLabel: e.target.value as LibraryFilters["colorLabel"],
+            })
+          }
+        >
+          <option value="any">Any</option>
+          {COLOR_LABELS.map((c) => (
+            <option key={c} value={c}>
+              {c}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label>
+        Sort
+        <select value={props.sort} onChange={(e) => props.onSort(e.target.value as LibrarySort)}>
+          <option value="filename">File name</option>
+          <option value="rating">Rating</option>
+          <option value="capture">Capture date</option>
+          <option value="mtime">Import date</option>
+        </select>
+      </label>
+      <button
+        type="button"
+        className={props.libraryView === "grid" ? "on" : ""}
+        onClick={() => props.onView("grid")}
+      >
+        Grid
+      </button>
+      <button
+        type="button"
+        className={props.libraryView === "compare" ? "on" : ""}
+        onClick={() => props.onView("compare")}
+      >
+        Compare
+      </button>
+      <label className="mask-check">
+        <input
+          type="checkbox"
+          checked={props.autoAdvance}
+          onChange={(e) => props.onAutoAdvance(e.target.checked)}
+        />
+        Auto-advance
+      </label>
+      <button
+        type="button"
+        className="btn-ghost"
+        onClick={() => props.onFilters(DEFAULT_LIBRARY_FILTERS)}
+      >
+        Clear filters
+      </button>
     </div>
   );
 }
@@ -94,7 +304,10 @@ export function FolderList(props: {
 export function CollectionsList(props: {
   collections: Collection[];
   active: string | null;
+  quickCount: number;
+  quickActive: boolean;
   onPick: (id: string | null) => void;
+  onQuick: () => void;
   onCreate: () => void;
   onAddPhoto: () => void;
   onRemovePhoto: () => void;
@@ -106,10 +319,15 @@ export function CollectionsList(props: {
         <li>
           <button
             type="button"
-            className={props.active === null ? "on" : ""}
+            className={props.active === null && !props.quickActive ? "on" : ""}
             onClick={() => props.onPick(null)}
           >
             All collections
+          </button>
+        </li>
+        <li>
+          <button type="button" className={props.quickActive ? "on" : ""} onClick={props.onQuick}>
+            Quick Collection ({props.quickCount})
           </button>
         </li>
         {props.collections.map((c) => (
@@ -168,7 +386,13 @@ export function SnapshotsList(props: {
   );
 }
 
-export function MetaList({ photo }: { photo: Photo }) {
+export function MetaList({
+  photo,
+  onPatch,
+}: {
+  photo: Photo;
+  onPatch: (patch: Partial<Pick<Photo, "title" | "caption" | "copyright" | "creator" | "keywords" | "colorLabel">>) => void;
+}) {
   const exposure = [photo.exif.ExposureTime, photo.exif.FNumber, photo.exif.ISO && `ISO ${photo.exif.ISO}`]
     .filter(Boolean)
     .join(" · ");
@@ -176,6 +400,54 @@ export function MetaList({ photo }: { photo: Photo }) {
     <dl className="meta">
       <dt>File</dt>
       <dd>{photoLabel(photo)}</dd>
+      <dt>Title</dt>
+      <dd>
+        <input
+          className="meta-input"
+          value={photo.title}
+          onChange={(e) => onPatch({ title: e.target.value })}
+          placeholder="Title"
+        />
+      </dd>
+      <dt>Caption</dt>
+      <dd>
+        <textarea
+          className="meta-input"
+          value={photo.caption}
+          rows={2}
+          onChange={(e) => onPatch({ caption: e.target.value })}
+          placeholder="Caption"
+        />
+      </dd>
+      <dt>Keywords</dt>
+      <dd>
+        <input
+          className="meta-input"
+          value={photo.keywords.join(", ")}
+          onChange={(e) =>
+            onPatch({
+              keywords: e.target.value
+                .split(",")
+                .map((k) => k.trim())
+                .filter(Boolean),
+            })
+          }
+          placeholder="landscape, portrait"
+        />
+      </dd>
+      <dt>Color label</dt>
+      <dd className="label-row">
+        {COLOR_LABELS.map((label) => (
+          <button
+            key={label}
+            type="button"
+            className={`label-btn${photo.colorLabel === label ? " on" : ""}`}
+            style={colorLabelStyle(label)}
+            title={label}
+            onClick={() => onPatch({ colorLabel: photo.colorLabel === label ? null : label })}
+          />
+        ))}
+      </dd>
       <dt>Size</dt>
       <dd>{photo.width && photo.height ? `${photo.width} × ${photo.height}` : "—"}</dd>
       {photo.exif.Model ? (
@@ -199,6 +471,22 @@ export function MetaList({ photo }: { photo: Photo }) {
           <dd>{exposure}</dd>
         </>
       ) : null}
+      <dt>Copyright</dt>
+      <dd>
+        <input
+          className="meta-input"
+          value={photo.copyright}
+          onChange={(e) => onPatch({ copyright: e.target.value })}
+        />
+      </dd>
+      <dt>Creator</dt>
+      <dd>
+        <input
+          className="meta-input"
+          value={photo.creator}
+          onChange={(e) => onPatch({ creator: e.target.value })}
+        />
+      </dd>
       <dt>Flag</dt>
       <dd>{photo.flag}</dd>
       <dt>Rating</dt>

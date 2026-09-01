@@ -3,6 +3,8 @@ import type { RecipeHistory } from "../recipe/history";
 
 export type PhotoKind = "bitmap" | "raw" | "sample";
 
+export type ColorLabel = "red" | "yellow" | "green" | "blue" | "purple";
+
 export type Photo = {
   id: string;
   path: string;
@@ -23,7 +25,19 @@ export type Photo = {
   masterId?: string;
   /** Display suffix for virtual copies, e.g. "Copy 1". */
   copyName?: string;
+  keywords: string[];
+  colorLabel: ColorLabel | null;
+  title: string;
+  caption: string;
+  copyright: string;
+  creator: string;
+  quickCollection: boolean;
 };
+
+export type CatalogFields = Pick<
+  Photo,
+  "rating" | "flag" | "keywords" | "colorLabel" | "title" | "caption" | "copyright" | "creator" | "quickCollection"
+>;
 
 export type Preset = {
   id: string;

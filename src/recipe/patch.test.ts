@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createBrushMask, createColorRangeMask, createLinearMask, createLuminanceMask, createRadialMask, defaultRecipe } from "./defaults";
-import { applyCatalogPatch, applyPatch, clamp, parseRecipe } from "./patch";
+import { applyCatalogPatch, applyPatch, clamp, defaultCatalogFields, parseRecipe } from "./patch";
 import { isNeutralCalibration, isNeutralGrading, MAX_MASKS } from "./types";
 
 describe("applyPatch", () => {
@@ -253,7 +253,7 @@ describe("applyPatch", () => {
 
 describe("applyCatalogPatch", () => {
   it("clamps rating", () => {
-    expect(applyCatalogPatch({ rating: 0, flag: "unflagged" }, { rating: 9 }).rating).toBe(5);
+    expect(applyCatalogPatch(defaultCatalogFields(), { rating: 9 }).rating).toBe(5);
   });
 });
 

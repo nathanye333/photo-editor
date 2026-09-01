@@ -110,7 +110,8 @@ export const CATEGORY_DOCS: Record<ToolCategory, string> = {
     "Detail/presence: texture (fine), clarity (mid), dehaze; sharpening with sharpenRadius/sharpenDetail/sharpenMasking; noiseReduction (luminance) with noiseReductionDetail, plus colorNoiseReduction and moire. Raise sharpenMasking to keep sharpening off skin; negative texture smooths it.",
   optics:
     "Optics/effects: set_lens_profile picks a built-in lens profile; apply_develop_patch carries optics.{distortion,ca,defringePurple,defringeGreen} and effects.{vignetteAmount,vignetteMidpoint,grainAmount,grainSize,grainRoughness}. Negative vignetteAmount darkens the corners.",
-  catalog: "Catalog: apply_catalog_patch with rating 0-5 and flag pick|reject|unflagged.",
+  catalog:
+    "Catalog: apply_catalog_patch with rating, flag, keywords, colorLabel, title/caption/copyright/creator, quickCollection.",
   presets: "Presets: apply_preset by name, reset_recipe, copy_settings.",
   masks:
     "Masks: upsert_brush_mask (paint stamps), upsert_color_mask (hue/chroma), upsert_luminance_mask (brightness range), upsert_mask (radial), upsert_linear_mask (gradient line), remove_mask. Prefer brush/color/luma for selecting areas.",

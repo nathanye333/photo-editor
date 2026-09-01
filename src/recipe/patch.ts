@@ -1,4 +1,5 @@
 import { DEFAULT_CAMERA_PROFILE } from "../render/cameraProfiles";
+import type { CatalogFields, ColorLabel } from "../catalog/types";
 import { normalizeCrop } from "./crop";
 import { identityPoints } from "./curve";
 import { defaultGlobals, defaultRecipe } from "./defaults";
@@ -22,7 +23,6 @@ import {
   type DevelopPatch,
   type EditRecipe,
   type Effects,
-  type Flag,
   type Globals,
   type GlobalsPatch,
   type HslAdjust,
@@ -452,14 +452,81 @@ export function applyPatch(
   };
 }
 
-export function applyCatalogPatch(
-  current: { rating: number; flag: Flag },
-  patch: CatalogPatch,
-): { rating: number; flag: Flag } {
+export function applyCatalogPatch(current: CatalogFields, patch: CatalogPatch): CatalogFields {
+  const labels: ColorLabel[] = ["red", "yellow", "green", "blue", "purple"];
+  const colorLabel =
+    patch.colorLabel === undefined
+      ? current.colorLabel
+      : patch.colorLabel === null
+        ? null
+        : labels.includes(patch.colorLabel as ColorLabel)
+          ? (patch.colorLabel as ColorLabel)
+          : current.colorLabel;
   return {
     rating: patch.rating === undefined ? current.rating : Math.round(clamp(patch.rating, RANGES.rating)),
     flag: patch.flag ?? current.flag,
+    keywords: patch.keywords ?? current.keywords,
+    colorLabel,
+    title: patch.title ?? current.title,
+    caption: patch.caption ?? current.caption,
+    copyright: patch.copyright ?? current.copyright,
+    creator: patch.creator ?? current.creator,
+    quickCollection: patch.quickCollection ?? current.quickCollection,
   };
+}
+
+export function defaultCatalogFields(): CatalogFields {
+  return {
+    rating: 0,
+    flag: "unflagged",
+    keywords: [],
+    colorLabel: null,
+    title: "",
+    caption: "",
+    copyright: "",
+    creator: "",
+    quickCollection: false,
+  };
+}
+
+export function parseCatalogFields(
+  rating: unknown,
+  flag: unknown,
+  keywords?: unknown,
+  colorLabel?: unknown,
+  title?: unknown,
+  caption?: unknown,
+  copyright?: unknown,
+  creator?: unknown,
+  quickCollection?: unknown,
+): CatalogFields {
+  const labels: ColorLabel[] = ["red", "yellow", "green", "blue", "purple"];
+  let parsedKeywords: string[] = [];
+  if (typeof keywords === "string") {
+    try {
+      const raw = JSON.parse(keywords);
+      if (Array.isArray(raw)) parsedKeywords = raw.filter((k): k is string => typeof k === "string");
+    } catch {
+      parsedKeywords = [];
+    }
+  } else if (Array.isArray(keywords)) {
+    parsedKeywords = keywords.filter((k): k is string => typeof k === "string");
+  }
+  const label =
+    typeof colorLabel === "string" && labels.includes(colorLabel as ColorLabel)
+      ? (colorLabel as ColorLabel)
+      : null;
+  return applyCatalogPatch(defaultCatalogFields(), {
+    rating: typeof rating === "number" ? rating : Number(rating),
+    flag: flag === "pick" || flag === "reject" ? flag : "unflagged",
+    keywords: parsedKeywords,
+    colorLabel: label,
+    title: typeof title === "string" ? title : "",
+    caption: typeof caption === "string" ? caption : "",
+    copyright: typeof copyright === "string" ? copyright : "",
+    creator: typeof creator === "string" ? creator : "",
+    quickCollection: quickCollection === 1 || quickCollection === true,
+  });
 }
 
 /** v1 recipes stored a single `points` array; it becomes the composite curve. */
@@ -498,9 +565,4 @@ export function parseRecipe(raw: unknown): EditRecipe {
     base.crop = { ...base.crop, angle: legacyAngle };
   }
   return applyPatch(base, { globals: {} }, "absolute");
-}
-
-export function parseCatalogFields(rating: unknown, flag: unknown): { rating: number; flag: Flag } {
-  const f: Flag = flag === "pick" || flag === "reject" ? flag : "unflagged";
-  return { rating: Math.round(clamp(num(rating, 0), RANGES.rating)), flag: f };
 }
