@@ -129,9 +129,9 @@ Fill out panels that exist as stubs or single sliders.
 
 ### Tone curve
 
-- [ ] Point curve UI (click/drag control points)
-- [ ] Channel curves (RGB, Red, Green, Blue)
-- [ ] Parametric ↔ point curve sync where applicable
+- [x] Point curve UI (click/drag control points)
+- [x] Channel curves (RGB, Red, Green, Blue)
+- [x] Parametric ↔ point curve sync where applicable (parametric drawn as a guide behind the point curve)
 
 ### Other develop
 

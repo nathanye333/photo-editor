@@ -13,3 +13,7 @@
 {"id":"brush-paint","instruction":"paint a brush mask on the subject and brighten it","expectedCategories":["masks","tone"],"expectedTool":"upsert_brush_mask"}
 {"id":"luma-select","instruction":"select the highlights with a luminance mask and pull them down","expectedCategories":["masks","tone"],"expectedTool":"upsert_luminance_mask","expectedPatch":{"masks":{"upsert":[{"id":"eval-luma","name":"Highlights","mode":"add","components":[{"type":"luminance_range","min":0.55,"max":1,"smooth":0.08}],"invert":false,"feather":50,"density":100,"params":{"highlights":-30}}]}},"mode":"absolute"}
 {"id":"color-select","instruction":"select the green grass with a color range mask","expectedCategories":["masks","color"],"expectedTool":"upsert_color_mask"}
+{"id":"s-curve","instruction":"add a gentle s-curve","expectedCategories":["tone"],"expectedTool":"set_tone_curve_points"}
+{"id":"matte-fade","instruction":"give it a matte fade","expectedCategories":["tone"],"expectedTool":"set_tone_curve_points"}
+{"id":"curve-lift-blacks","instruction":"lift the blacks with the curve","expectedCategories":["tone"],"expectedPatch":{"globals":{"toneCurve":{"channels":{"rgb":[[0,0.08],[1,1]]}}}},"mode":"absolute"}
+{"id":"curve-cool-shadows","instruction":"cool the shadows with a blue curve","expectedCategories":["tone","color"],"expectedPatch":{"globals":{"toneCurve":{"channels":{"blue":[[0,0.06],[1,1]]}}}},"mode":"absolute"}

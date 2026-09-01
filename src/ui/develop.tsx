@@ -2,6 +2,7 @@ import { useState } from "react";
 import { HSL_CHANNELS, RANGES, type Crop, type CropAspect, type CropPatch, type EditRecipe, type GlobalsPatch, type HslChannel, type Mask } from "../recipe/types";
 import { Panel, Slider } from "./controls";
 import { GeometryPanel } from "./crop";
+import { CurveEditor } from "./curve";
 import { MasksPanel, type BrushToolSettings } from "./masks";
 
 type Props = {
@@ -95,6 +96,11 @@ export function DevelopPanels({
         {num("saturation", "Saturation", RANGES.saturation, 1)}
       </Panel>
       <Panel {...panel("curve", "Tone Curve")}>
+        <CurveEditor
+          curve={g.toneCurve}
+          onLive={(channel, points) => onLive({ toneCurve: { channels: { [channel]: points } } })}
+          onCommit={onCommit}
+        />
         {(["highlights", "lights", "darks", "shadows"] as const).map((k) => (
           <Slider
             key={k}
