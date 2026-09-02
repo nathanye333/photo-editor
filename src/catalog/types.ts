@@ -18,6 +18,8 @@ export type Photo = {
   history: RecipeHistory;
   folder: string;
   thumbPath?: string;
+  /** Persisted JPEG thumb for browser reload (data URL). */
+  thumbDataUrl?: string;
   blobUrl?: string;
   kind: PhotoKind;
   missing?: boolean;

@@ -177,7 +177,7 @@ Lightroom's Library module is much richer than grid + filmstrip.
 
 - [x] Read GPS from EXIF
 - [x] Map module for location-based browsing
-- [ ] Write location metadata
+- [x] Write location metadata
 
 **Exit criteria:** Organize a shoot into collections, keyword favorites, cull with compare view and auto-advance, filter by camera/lens.
 

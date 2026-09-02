@@ -9,6 +9,7 @@ export function photoPreviewSrc(photo: Photo): string | undefined {
 
 export function photoThumbSrc(photo: Photo): string | undefined {
   if (photo.blobUrl) return photo.blobUrl;
+  if (photo.thumbDataUrl) return photo.thumbDataUrl;
   if (photo.thumbPath && isTauri()) return fileUrl(photo.thumbPath);
   return photoPreviewSrc(photo);
 }

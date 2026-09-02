@@ -543,7 +543,14 @@ export function MetaList({
   onPatch,
 }: {
   photo: Photo;
-  onPatch: (patch: Partial<Pick<Photo, "title" | "caption" | "copyright" | "creator" | "keywords" | "colorLabel">>) => void;
+  onPatch: (
+    patch: Partial<
+      Pick<
+        Photo,
+        "title" | "caption" | "copyright" | "creator" | "keywords" | "colorLabel" | "latitude" | "longitude"
+      >
+    >,
+  ) => void;
 }) {
   const exposure = [photo.exif.ExposureTime, photo.exif.FNumber, photo.exif.ISO && `ISO ${photo.exif.ISO}`]
     .filter(Boolean)
@@ -623,14 +630,34 @@ export function MetaList({
           <dd>{exposure}</dd>
         </>
       ) : null}
-      {photo.latitude != null && photo.longitude != null ? (
-        <>
-          <dt>Location</dt>
-          <dd>
-            {photo.latitude.toFixed(5)}, {photo.longitude.toFixed(5)}
-          </dd>
-        </>
-      ) : null}
+      <dt>Latitude</dt>
+      <dd>
+        <input
+          className="meta-input"
+          type="number"
+          step="any"
+          value={photo.latitude ?? ""}
+          placeholder="e.g. 37.7749"
+          onChange={(e) => {
+            const raw = e.target.value.trim();
+            onPatch({ latitude: raw === "" ? undefined : Number(raw) });
+          }}
+        />
+      </dd>
+      <dt>Longitude</dt>
+      <dd>
+        <input
+          className="meta-input"
+          type="number"
+          step="any"
+          value={photo.longitude ?? ""}
+          placeholder="e.g. -122.4194"
+          onChange={(e) => {
+            const raw = e.target.value.trim();
+            onPatch({ longitude: raw === "" ? undefined : Number(raw) });
+          }}
+        />
+      </dd>
       <dt>Copyright</dt>
       <dd>
         <input

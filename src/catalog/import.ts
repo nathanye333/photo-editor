@@ -5,6 +5,7 @@ import { matchLensProfile } from "../render/lensProfiles";
 import { decodeRaw, fileExists, fileUrl, isTauri, writeThumb, type ScannedFile } from "../native";
 import { parseExif, type ExifData } from "./exif";
 import { assignBurstStacks } from "./stacks";
+import { storeImageBlob } from "./browserBlobs";
 import { emptyPhoto, upsertPhoto } from "./store";
 import { fileName, folderOf, photoId, type Photo } from "./types";
 
@@ -58,7 +59,19 @@ async function readExifTags(blob: Blob): Promise<ExifData> {
   }
 }
 
+async function blobToDataUrl(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(reader.error ?? new Error("read failed"));
+    reader.readAsDataURL(blob);
+  });
+}
+
 async function ingestBitmap(photo: Photo, blob: Blob): Promise<Photo> {
+  if (!isTauri()) {
+    await storeImageBlob(photo.id, blob);
+  }
   const bmp = await bitmapFromBlob(blob);
   photo.width = bmp.width;
   photo.height = bmp.height;
@@ -67,7 +80,8 @@ async function ingestBitmap(photo: Photo, blob: Blob): Promise<Photo> {
     if (isTauri()) {
       photo.thumbPath = await writeThumb(photo.id, new Uint8Array(await thumb.arrayBuffer()));
     } else {
-      photo.blobUrl = URL.createObjectURL(thumb);
+      photo.thumbDataUrl = await blobToDataUrl(thumb);
+      photo.blobUrl = URL.createObjectURL(blob);
     }
   } finally {
     bmp.close();
@@ -149,7 +163,7 @@ export async function photosFromScanned(existing: Photo[], files: ScannedFile[])
   return added;
 }
 
-export async function photosFromFileList(list: FileList): Promise<Photo[]> {
+export async function photosFromFileList(existing: Photo[], list: FileList): Promise<Photo[]> {
   const added: Photo[] = [];
   for (const file of Array.from(list)) {
     if (!/\.(jpe?g|png|webp)$/i.test(file.name)) continue;
@@ -160,14 +174,22 @@ export async function photosFromFileList(list: FileList): Promise<Photo[]> {
       mtime: Math.floor(file.lastModified / 1000),
       kind: "bitmap",
       folder: folderOf(path) || "Import",
-      blobUrl: URL.createObjectURL(file),
     });
     try {
-      added.push(await ingestBitmap(photo, file));
+      const row = await ingestBitmap(photo, file);
+      added.push(row);
+      await upsertPhoto(row);
     } catch {
       photo.missing = true;
-      added.push(meta(photo));
+      const row = meta(photo);
+      added.push(row);
+      await upsertPhoto(row);
     }
+  }
+  const stackUpdates = assignBurstStacks(existing, added);
+  for (const row of stackUpdates) {
+    if (!added.some((p) => p.id === row.id)) added.push(row);
+    await upsertPhoto(row);
   }
   return added;
 }

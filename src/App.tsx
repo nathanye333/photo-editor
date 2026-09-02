@@ -242,6 +242,12 @@ export default function App() {
           if (!cancelled) renderer.setImage(bmp);
           return;
         }
+        if (photo.thumbDataUrl) {
+          const blob = await fetch(photo.thumbDataUrl).then((r) => r.blob());
+          const bmp = await bitmapFromBlob(blob);
+          if (!cancelled) renderer.setImage(bmp);
+          return;
+        }
         if (photo.kind === "raw" && isTauri()) {
           const raw = await loadRawPreview(photo.path);
           if (cancelled) {
@@ -595,6 +601,42 @@ export default function App() {
     return cat;
   }
 
+  function patchPhotoMeta(
+    patch: Partial<
+      Pick<
+        Photo,
+        "title" | "caption" | "copyright" | "creator" | "keywords" | "colorLabel" | "latitude" | "longitude"
+      >
+    >,
+  ) {
+    const current = photoRef.current;
+    if (!current) return;
+    const catalogKeys = ["title", "caption", "copyright", "creator", "keywords", "colorLabel"] as const;
+    const catalogPatch: CatalogPatch = {};
+    for (const key of catalogKeys) {
+      if (key in patch) catalogPatch[key] = patch[key] as never;
+    }
+    const cat = Object.keys(catalogPatch).length ? applyCatalogPatch(current, catalogPatch) : current;
+    let next: Photo = { ...current, ...cat };
+    if ("latitude" in patch || "longitude" in patch) {
+      const lat = "latitude" in patch ? patch.latitude : current.latitude;
+      const lng = "longitude" in patch ? patch.longitude : current.longitude;
+      const validLat = lat != null && Number.isFinite(lat) ? lat : undefined;
+      const validLng = lng != null && Number.isFinite(lng) ? lng : undefined;
+      next = {
+        ...next,
+        latitude: validLat,
+        longitude: validLng,
+        exif: { ...next.exif },
+      };
+      if (validLat != null) next.exif.GPSLatitude = String(validLat);
+      else delete next.exif.GPSLatitude;
+      if (validLng != null) next.exif.GPSLongitude = String(validLng);
+      else delete next.exif.GPSLongitude;
+    }
+    replacePhoto(next);
+  }
+
   function cullFlag(flag: Flag) {
     patchCatalog({ flag });
     if (autoAdvance && mod === "library" && libraryView !== "grid") {
@@ -758,7 +800,7 @@ export default function App() {
 
   async function onFiles(list: FileList | null) {
     if (!list?.length) return;
-    const added = await photosFromFileList(list);
+    const added = await photosFromFileList(photos, list);
     setPhotos((ps) => mergePhotos(ps, added));
     if (added[0]) setSelectedId(added[0].id);
     setStatus(added.length ? `Imported ${added.length}` : "No new photos");
@@ -1202,7 +1244,7 @@ export default function App() {
         {photo && mod === "library" ? (
           <MetaList
             photo={photo}
-            onPatch={(patch) => patchCatalog(patch)}
+            onPatch={(patch) => patchPhotoMeta(patch)}
           />
         ) : null}
         {photo && mod === "develop" ? (

@@ -3,6 +3,8 @@ import { initHistory, type RecipeHistory } from "../recipe/history";
 import { cloneRecipe, defaultRecipe } from "../recipe/defaults";
 import { parseCatalogFields, parseRecipe, defaultCatalogFields } from "../recipe/patch";
 import { isTauri } from "../native";
+import { loadImageBlob } from "./browserBlobs";
+import { loadBrowserCatalog, scheduleBrowserCatalogSave } from "./browserPersist";
 import {
   folderOf,
   type Collection,
@@ -49,6 +51,44 @@ let memoryPresets: Preset[] = [];
 let memorySnapshots: RecipeSnapshot[] = [];
 let memoryCollections: Collection[] = [];
 let memoryCollectionPhotos: Array<{ collectionId: string; photoId: string }> = [];
+
+function browserSnapshot() {
+  return {
+    photos: memoryPhotos,
+    presets: memoryPresets,
+    snapshots: memorySnapshots,
+    collections: memoryCollections,
+    collectionPhotos: memoryCollectionPhotos,
+  };
+}
+
+function persistBrowserIfNeeded(): void {
+  if (db || isTauri()) return;
+  scheduleBrowserCatalogSave(browserSnapshot);
+}
+
+function loadBrowserIntoMemory(): void {
+  const data = loadBrowserCatalog();
+  if (!data) return;
+  memoryPhotos = data.photos;
+  memoryPresets = data.presets;
+  memorySnapshots = data.snapshots;
+  memoryCollections = data.collections;
+  memoryCollectionPhotos = data.collectionPhotos;
+}
+
+async function hydrateBrowserPhotoUrls(photos: Photo[]): Promise<Photo[]> {
+  const out: Photo[] = [];
+  for (const photo of photos) {
+    if (photo.blobUrl || photo.kind === "sample") {
+      out.push(photo);
+      continue;
+    }
+    const blob = await loadImageBlob(photo.id);
+    out.push(blob ? { ...photo, blobUrl: URL.createObjectURL(blob) } : photo);
+  }
+  return out;
+}
 
 function hydrate(row: PhotoRow): Photo {
   const catalog = parseCatalogFields(
@@ -152,7 +192,10 @@ async function migrateV4(database: Database): Promise<void> {
 }
 
 export async function openCatalog(): Promise<void> {
-  if (!isTauri()) return;
+  if (!isTauri()) {
+    loadBrowserIntoMemory();
+    return;
+  }
   db = await Database.load("sqlite:field.db");
   await db.execute(`
     CREATE TABLE IF NOT EXISTS photos (
@@ -223,7 +266,10 @@ export async function openCatalog(): Promise<void> {
 }
 
 export async function loadPhotos(): Promise<Photo[]> {
-  if (!db) return memoryPhotos;
+  if (!db) {
+    memoryPhotos = await hydrateBrowserPhotoUrls(memoryPhotos);
+    return memoryPhotos;
+  }
   const rows = await db.select<PhotoRow[]>("SELECT * FROM photos ORDER BY path, copy_name");
   return rows.map(hydrate);
 }
@@ -233,6 +279,7 @@ export async function upsertPhoto(photo: Photo): Promise<void> {
     const i = memoryPhotos.findIndex((p) => p.id === photo.id);
     if (i >= 0) memoryPhotos[i] = photo;
     else memoryPhotos.push(photo);
+    persistBrowserIfNeeded();
     return;
   }
   await db.execute(
@@ -289,6 +336,7 @@ export async function loadPresets(): Promise<Preset[]> {
 export async function savePresetRow(preset: Preset): Promise<void> {
   if (!db) {
     memoryPresets = [...memoryPresets.filter((p) => p.id !== preset.id), preset];
+    persistBrowserIfNeeded();
     return;
   }
   await db.execute(
@@ -319,6 +367,7 @@ export async function loadSnapshots(photoId: string): Promise<RecipeSnapshot[]> 
 export async function saveSnapshotRow(snapshot: RecipeSnapshot): Promise<void> {
   if (!db) {
     memorySnapshots = [...memorySnapshots.filter((s) => s.id !== snapshot.id), snapshot];
+    persistBrowserIfNeeded();
     return;
   }
   await db.execute(
@@ -337,6 +386,7 @@ export async function saveSnapshotRow(snapshot: RecipeSnapshot): Promise<void> {
 export async function deleteSnapshotRow(id: string): Promise<void> {
   if (!db) {
     memorySnapshots = memorySnapshots.filter((s) => s.id !== id);
+    persistBrowserIfNeeded();
     return;
   }
   await db.execute(`DELETE FROM recipe_snapshots WHERE id = $1`, [id]);
@@ -368,6 +418,7 @@ export async function loadCollections(): Promise<Collection[]> {
 export async function saveCollectionRow(collection: Collection): Promise<void> {
   if (!db) {
     memoryCollections = [...memoryCollections.filter((c) => c.id !== collection.id), collection];
+    persistBrowserIfNeeded();
     return;
   }
   await db.execute(
@@ -386,6 +437,7 @@ export async function deleteCollectionRow(id: string): Promise<void> {
   if (!db) {
     memoryCollections = memoryCollections.filter((c) => c.id !== id);
     memoryCollectionPhotos = memoryCollectionPhotos.filter((r) => r.collectionId !== id);
+    persistBrowserIfNeeded();
     return;
   }
   await db.execute(`DELETE FROM collection_photos WHERE collection_id = $1`, [id]);
@@ -409,6 +461,7 @@ export async function addPhotoToCollection(collectionId: string, photoId: string
   if (!db) {
     if (!memoryCollectionPhotos.some((r) => r.collectionId === collectionId && r.photoId === photoId)) {
       memoryCollectionPhotos.push({ collectionId, photoId });
+      persistBrowserIfNeeded();
     }
     return;
   }
@@ -429,6 +482,7 @@ export async function removePhotoFromCollection(collectionId: string, photoId: s
     memoryCollectionPhotos = memoryCollectionPhotos.filter(
       (r) => !(r.collectionId === collectionId && r.photoId === photoId),
     );
+    persistBrowserIfNeeded();
     return;
   }
   await db.execute(`DELETE FROM collection_photos WHERE collection_id = $1 AND photo_id = $2`, [
@@ -456,8 +510,11 @@ export function createVirtualCopy(master: Photo, existingCopies: Photo[]): Photo
     history: initHistory(recipe),
     folder: master.folder,
     thumbPath: master.thumbPath,
+    thumbDataUrl: master.thumbDataUrl,
     blobUrl: master.blobUrl,
     kind: master.kind,
+    latitude: master.latitude,
+    longitude: master.longitude,
   });
 }
 
