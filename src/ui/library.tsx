@@ -9,6 +9,7 @@ import {
 } from "../catalog/filter";
 import { fileName, photoLabel, type Collection, type ColorLabel, type Photo } from "../catalog/types";
 import { photoDisplaySrc, photoThumbSrc } from "../catalog/media";
+import { stackCount } from "../catalog/stacks";
 
 export type LibraryView = "grid" | "compare" | "loupe" | "survey";
 export type LoupeZoom = "fit" | "100" | "200";
@@ -47,24 +48,50 @@ function CellBadge({ photo }: { photo: Photo }) {
 
 export function LibraryGrid(props: {
   photos: Photo[];
+  allPhotos: Photo[];
   selectedId: string | null;
+  expandedStacks: ReadonlySet<string>;
   onSelect: (id: string) => void;
   onOpen: (id: string) => void;
+  onToggleStack: (stackId: string) => void;
 }) {
   return (
     <div className="lib-grid">
       {props.photos.map((p) => {
         const src = photoThumbSrc(p);
+        const count = p.stackId ? stackCount(props.allPhotos, p.stackId) : 0;
+        const collapsed = count > 1 && !props.expandedStacks.has(p.stackId!);
         return (
           <button
             key={p.id}
             type="button"
-            className={`cell${p.id === props.selectedId ? " sel" : ""}`}
+            className={`cell${p.id === props.selectedId ? " sel" : ""}${collapsed ? " stacked" : ""}`}
             onClick={() => props.onSelect(p.id)}
             onDoubleClick={() => props.onOpen(p.id)}
           >
             <div className="cell-badges">
               <CellBadge photo={p} />
+              {collapsed ? (
+                <span
+                  role="button"
+                  tabIndex={0}
+                  className="stack-badge"
+                  title={`${count} photos in stack`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    props.onToggleStack(p.stackId!);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      props.onToggleStack(p.stackId!);
+                    }
+                  }}
+                >
+                  {count}
+                </span>
+              ) : null}
             </div>
             {src && !p.missing ? (
               <img src={src} alt={fileName(p.path)} />
@@ -427,10 +454,13 @@ export function CollectionsList(props: {
   onPick: (id: string | null) => void;
   onQuick: () => void;
   onCreate: () => void;
+  onCreateSmart: () => void;
   onAddPhoto: () => void;
   onRemovePhoto: () => void;
   canManagePhoto: boolean;
 }) {
+  const activeCollection = props.collections.find((c) => c.id === props.active);
+  const isManual = activeCollection?.kind !== "smart";
   return (
     <>
       <ul className="folders">
@@ -455,6 +485,7 @@ export function CollectionsList(props: {
               className={props.active === c.id ? "on" : ""}
               onClick={() => props.onPick(c.id)}
             >
+              {c.kind === "smart" ? "⚡ " : ""}
               {c.name}
             </button>
           </li>
@@ -463,7 +494,10 @@ export function CollectionsList(props: {
       <button type="button" className="btn-ghost" onClick={props.onCreate}>
         New collection
       </button>
-      {props.active && props.canManagePhoto ? (
+      <button type="button" className="btn-ghost" onClick={props.onCreateSmart}>
+        New smart collection
+      </button>
+      {props.active && props.canManagePhoto && isManual ? (
         <div className="collection-actions">
           <button type="button" className="btn-ghost" onClick={props.onAddPhoto}>
             Add photo
@@ -587,6 +621,14 @@ export function MetaList({
         <>
           <dt>Exposure</dt>
           <dd>{exposure}</dd>
+        </>
+      ) : null}
+      {photo.latitude != null && photo.longitude != null ? (
+        <>
+          <dt>Location</dt>
+          <dd>
+            {photo.latitude.toFixed(5)}, {photo.longitude.toFixed(5)}
+          </dd>
         </>
       ) : null}
       <dt>Copyright</dt>

@@ -7,16 +7,21 @@ const entryCount = (entry: Entry) =>
   typeof entry.value === "string" ? entry.value.length + 1 : entry.value.length;
 
 /** Builds a little-endian TIFF block so the parser can be tested without fixtures. */
-function tiff(ifd0: Entry[], exifIfd: Entry[] = []): Uint8Array {
+function tiff(ifd0: Entry[], exifIfd: Entry[] = [], gpsIfd: Entry[] = []): Uint8Array {
   const HEADER = 8;
   const blockSize = (entries: Entry[]) => 2 + entries.length * 12 + 4;
-  const ifd0Entries: Entry[] = [...ifd0];
-  const exifOffset = HEADER + blockSize(ifd0Entries) + (exifIfd.length ? 12 : 0);
-  if (exifIfd.length) {
-    ifd0Entries.push({ tag: 0x8769, type: 4, value: [exifOffset] });
-  }
+  const pointerCount = (exifIfd.length ? 1 : 0) + (gpsIfd.length ? 1 : 0);
+  let cursor = HEADER + blockSize([...ifd0, ...Array<Entry>(pointerCount)]);
+  const exifOffset = exifIfd.length ? cursor : 0;
+  if (exifIfd.length) cursor += blockSize(exifIfd);
+  const gpsOffset = gpsIfd.length ? cursor : 0;
 
-  const heapStart = HEADER + blockSize(ifd0Entries) + (exifIfd.length ? blockSize(exifIfd) : 0);
+  const ifd0Entries: Entry[] = [...ifd0];
+  if (exifIfd.length) ifd0Entries.push({ tag: 0x8769, type: 4, value: [exifOffset] });
+  if (gpsIfd.length) ifd0Entries.push({ tag: 0x8825, type: 4, value: [gpsOffset] });
+
+  const heapStart =
+    HEADER + blockSize(ifd0Entries) + (exifIfd.length ? blockSize(exifIfd) : 0) + (gpsIfd.length ? blockSize(gpsIfd) : 0);
   const heap: number[] = [];
   const bytes: number[] = [];
 
@@ -65,6 +70,7 @@ function tiff(ifd0: Entry[], exifIfd: Entry[] = []): Uint8Array {
   push32(bytes, HEADER);
   writeIfd(ifd0Entries);
   if (exifIfd.length) writeIfd(exifIfd);
+  if (gpsIfd.length) writeIfd(gpsIfd);
   bytes.push(...heap);
   return new Uint8Array(bytes);
 }
@@ -124,6 +130,24 @@ describe("parseExif", () => {
     expect(asShotNeutral?.[0]).toBeCloseTo(0.48, 3);
     expect(asShotNeutral?.[1]).toBeCloseTo(1, 3);
     expect(asShotNeutral?.[2]).toBeCloseTo(0.72, 3);
+  });
+
+  it("reads GPS coordinates from the GPS IFD", () => {
+    const bytes = tiff(
+      [],
+      [],
+      [
+        { tag: 0x0001, type: 2, value: "N" },
+        { tag: 0x0002, type: 5, value: [37, 46, 30] },
+        { tag: 0x0003, type: 2, value: "W" },
+        { tag: 0x0004, type: 5, value: [122, 25, 10] },
+      ],
+    );
+    const { latitude, longitude, tags } = parseExif(bytes);
+    expect(latitude).toBeCloseTo(37.775, 2);
+    expect(longitude).toBeCloseTo(-122.419, 2);
+    expect(tags.GPSLatitude).toBeDefined();
+    expect(tags.GPSLongitude).toBeDefined();
   });
 
   it("returns nothing for buffers without EXIF", () => {

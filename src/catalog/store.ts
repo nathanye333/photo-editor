@@ -6,10 +6,13 @@ import { isTauri } from "../native";
 import {
   folderOf,
   type Collection,
+  type CollectionKind,
   type Photo,
   type Preset,
   type RecipeSnapshot,
 } from "./types";
+import type { LibraryFilters } from "./filter";
+import { DEFAULT_LIBRARY_FILTERS } from "./filter";
 
 type PhotoRow = {
   id: string;
@@ -34,6 +37,10 @@ type PhotoRow = {
   copyright: string | null;
   creator: string | null;
   quick_collection: number | null;
+  stack_id: string | null;
+  stack_index: number | null;
+  latitude: number | null;
+  longitude: number | null;
 };
 
 let db: Database | null = null;
@@ -77,6 +84,10 @@ function hydrate(row: PhotoRow): Photo {
     kind: row.kind === "raw" ? "raw" : row.kind === "sample" ? "sample" : "bitmap",
     masterId: row.master_id ?? undefined,
     copyName: row.copy_name ?? undefined,
+    stackId: row.stack_id ?? undefined,
+    stackIndex: row.stack_index ?? undefined,
+    latitude: row.latitude ?? undefined,
+    longitude: row.longitude ?? undefined,
     ...catalog,
   };
 }
@@ -125,6 +136,21 @@ async function migrateV3(database: Database): Promise<void> {
   await database.execute(`ALTER TABLE photos ADD COLUMN quick_collection INTEGER DEFAULT 0`);
 }
 
+async function migrateV4(database: Database): Promise<void> {
+  const photoCols = await database.select<{ name: string }[]>("PRAGMA table_info(photos)");
+  if (!photoCols.some((c) => c.name === "stack_id")) {
+    await database.execute(`ALTER TABLE photos ADD COLUMN stack_id TEXT`);
+    await database.execute(`ALTER TABLE photos ADD COLUMN stack_index INTEGER DEFAULT 0`);
+    await database.execute(`ALTER TABLE photos ADD COLUMN latitude REAL`);
+    await database.execute(`ALTER TABLE photos ADD COLUMN longitude REAL`);
+  }
+  const colCols = await database.select<{ name: string }[]>("PRAGMA table_info(collections)");
+  if (!colCols.some((c) => c.name === "kind")) {
+    await database.execute(`ALTER TABLE collections ADD COLUMN kind TEXT DEFAULT 'manual'`);
+    await database.execute(`ALTER TABLE collections ADD COLUMN rules TEXT`);
+  }
+}
+
 export async function openCatalog(): Promise<void> {
   if (!isTauri()) return;
   db = await Database.load("sqlite:field.db");
@@ -151,11 +177,16 @@ export async function openCatalog(): Promise<void> {
       caption TEXT DEFAULT '',
       copyright TEXT DEFAULT '',
       creator TEXT DEFAULT '',
-      quick_collection INTEGER DEFAULT 0
+      quick_collection INTEGER DEFAULT 0,
+      stack_id TEXT,
+      stack_index INTEGER DEFAULT 0,
+      latitude REAL,
+      longitude REAL
     );
   `);
   await migrateV2(db);
   await migrateV3(db);
+  await migrateV4(db);
   await db.execute(`
     CREATE TABLE IF NOT EXISTS presets (
       id TEXT PRIMARY KEY,
@@ -176,7 +207,9 @@ export async function openCatalog(): Promise<void> {
   await db.execute(`
     CREATE TABLE IF NOT EXISTS collections (
       id TEXT PRIMARY KEY,
-      name TEXT NOT NULL
+      name TEXT NOT NULL,
+      kind TEXT DEFAULT 'manual',
+      rules TEXT
     );
   `);
   await db.execute(`
@@ -203,15 +236,17 @@ export async function upsertPhoto(photo: Photo): Promise<void> {
     return;
   }
   await db.execute(
-    `INSERT INTO photos (id,path,mtime,width,height,exif,rating,flag,recipe,history,folder,thumb_path,kind,master_id,copy_name,keywords,color_label,title,caption,copyright,creator,quick_collection)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)
+    `INSERT INTO photos (id,path,mtime,width,height,exif,rating,flag,recipe,history,folder,thumb_path,kind,master_id,copy_name,keywords,color_label,title,caption,copyright,creator,quick_collection,stack_id,stack_index,latitude,longitude)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26)
      ON CONFLICT(id) DO UPDATE SET
        path=excluded.path, mtime=excluded.mtime, width=excluded.width, height=excluded.height,
        exif=excluded.exif, rating=excluded.rating, flag=excluded.flag, recipe=excluded.recipe,
        history=excluded.history, folder=excluded.folder, thumb_path=excluded.thumb_path, kind=excluded.kind,
        master_id=excluded.master_id, copy_name=excluded.copy_name, keywords=excluded.keywords,
        color_label=excluded.color_label, title=excluded.title, caption=excluded.caption,
-       copyright=excluded.copyright, creator=excluded.creator, quick_collection=excluded.quick_collection`,
+       copyright=excluded.copyright, creator=excluded.creator, quick_collection=excluded.quick_collection,
+       stack_id=excluded.stack_id, stack_index=excluded.stack_index,
+       latitude=excluded.latitude, longitude=excluded.longitude`,
     [
       photo.id,
       photo.path,
@@ -235,6 +270,10 @@ export async function upsertPhoto(photo: Photo): Promise<void> {
       photo.copyright,
       photo.creator,
       photo.quickCollection ? 1 : 0,
+      photo.stackId ?? null,
+      photo.stackIndex ?? null,
+      photo.latitude ?? null,
+      photo.longitude ?? null,
     ],
   );
 }
@@ -303,10 +342,27 @@ export async function deleteSnapshotRow(id: string): Promise<void> {
   await db.execute(`DELETE FROM recipe_snapshots WHERE id = $1`, [id]);
 }
 
+function parseCollectionRules(raw: string | null): LibraryFilters | undefined {
+  if (!raw) return undefined;
+  try {
+    const parsed = JSON.parse(raw) as Partial<LibraryFilters>;
+    return { ...DEFAULT_LIBRARY_FILTERS, ...parsed };
+  } catch {
+    return undefined;
+  }
+}
+
 export async function loadCollections(): Promise<Collection[]> {
   if (!db) return memoryCollections;
-  const rows = await db.select<{ id: string; name: string }[]>("SELECT * FROM collections ORDER BY name");
-  return rows.map((r) => ({ id: r.id, name: r.name }));
+  const rows = await db.select<{ id: string; name: string; kind: string | null; rules: string | null }[]>(
+    "SELECT * FROM collections ORDER BY name",
+  );
+  return rows.map((r) => ({
+    id: r.id,
+    name: r.name,
+    kind: (r.kind === "smart" ? "smart" : "manual") as CollectionKind,
+    rules: r.kind === "smart" ? parseCollectionRules(r.rules) : undefined,
+  }));
 }
 
 export async function saveCollectionRow(collection: Collection): Promise<void> {
@@ -315,9 +371,14 @@ export async function saveCollectionRow(collection: Collection): Promise<void> {
     return;
   }
   await db.execute(
-    `INSERT INTO collections (id,name) VALUES ($1,$2)
-     ON CONFLICT(id) DO UPDATE SET name=excluded.name`,
-    [collection.id, collection.name],
+    `INSERT INTO collections (id,name,kind,rules) VALUES ($1,$2,$3,$4)
+     ON CONFLICT(id) DO UPDATE SET name=excluded.name, kind=excluded.kind, rules=excluded.rules`,
+    [
+      collection.id,
+      collection.name,
+      collection.kind,
+      collection.kind === "smart" && collection.rules ? JSON.stringify(collection.rules) : null,
+    ],
   );
 }
 

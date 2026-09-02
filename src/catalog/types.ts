@@ -32,6 +32,12 @@ export type Photo = {
   copyright: string;
   creator: string;
   quickCollection: boolean;
+  /** Burst/bracket stack id; masters in the same stack share this. */
+  stackId?: string;
+  /** Position within stack (0 = cover). */
+  stackIndex?: number;
+  latitude?: number;
+  longitude?: number;
 };
 
 export type CatalogFields = Pick<
@@ -53,9 +59,14 @@ export type RecipeSnapshot = {
   createdAt: number;
 };
 
+export type CollectionKind = "manual" | "smart";
+
 export type Collection = {
   id: string;
   name: string;
+  kind: CollectionKind;
+  /** Rule filters for smart collections. */
+  rules?: import("./filter").LibraryFilters;
 };
 
 export function photoId(path: string): string {

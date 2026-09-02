@@ -152,10 +152,10 @@ Lightroom's Library module is much richer than grid + filmstrip.
 ### Organization
 
 - [x] Manual collections
-- [ ] Smart collections (rule-based: rating, flag, date, camera, etc.)
+- [x] Smart collections (rule-based: rating, flag, date, camera, etc.)
 - [x] Quick Collection
 - [x] Virtual copies (same file, multiple recipes)
-- [ ] Photo stacks (burst / bracket grouping)
+- [x] Photo stacks (burst / bracket grouping)
 - [x] Color labels (red, yellow, green, blue, purple)
 
 ### Metadata & search
@@ -175,8 +175,8 @@ Lightroom's Library module is much richer than grid + filmstrip.
 
 ### Map
 
-- [ ] Read GPS from EXIF
-- [ ] Map module for location-based browsing
+- [x] Read GPS from EXIF
+- [x] Map module for location-based browsing
 - [ ] Write location metadata
 
 **Exit criteria:** Organize a shoot into collections, keyword favorites, cull with compare view and auto-advance, filter by camera/lens.
@@ -264,7 +264,7 @@ v1    ✅  Globals, library basics, agent, JPEG export
 v1.5  ✅  Masks (linear + canvas handles shipped; semantic next)
 v1.6  ✅  RAW decode + crop / transform
 v1.7  ✅  Develop depth
-v2.0  ~   Culling views shipped; smart collections + map next
+v2.0  ✓   Smart collections, stacks, map module shipped
 v2.x  →   XMP sidecars, batch export, export presets
 v3+   →   Spot heal, merge tools, tethering, print
 ```

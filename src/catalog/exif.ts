@@ -9,6 +9,8 @@ export type ExifData = {
   tags: Record<string, string>;
   /** DNG AsShotNeutral (tag 0xC628) as r/g/b multipliers. */
   asShotNeutral?: [number, number, number];
+  latitude?: number;
+  longitude?: number;
 };
 
 const IFD0_TAGS: Record<number, string> = {
@@ -27,7 +29,15 @@ const EXIF_TAGS: Record<number, string> = {
 };
 
 const TAG_EXIF_IFD = 0x8769;
+const TAG_GPS_IFD = 0x8825;
 const TAG_AS_SHOT_NEUTRAL = 0xc628;
+
+const GPS_TAGS: Record<number, string> = {
+  0x0001: "GPSLatitudeRef",
+  0x0002: "GPSLatitude",
+  0x0003: "GPSLongitudeRef",
+  0x0004: "GPSLongitude",
+};
 
 const TYPE_SIZES: Record<number, number> = { 1: 1, 2: 1, 3: 2, 4: 4, 5: 8, 7: 1, 9: 4, 10: 8 };
 
@@ -140,6 +150,31 @@ function round(value: number, digits: number): number {
   return Math.round(value * f) / f;
 }
 
+function dmsToDecimal(values: number[], ref: string, positive: string, negative: string): number | null {
+  if (!values.length) return null;
+  const deg = values[0] ?? 0;
+  const min = values[1] ?? 0;
+  const sec = values[2] ?? 0;
+  let decimal = deg + min / 60 + sec / 3600;
+  const r = ref.trim().toUpperCase();
+  if (r === negative) decimal = -decimal;
+  else if (r !== positive && r !== "") return null;
+  return round(decimal, 6);
+}
+
+function parseGpsCoord(
+  tags: Record<string, string>,
+  values: Record<string, number[]>,
+  dmsKey: string,
+  refKey: string,
+  positive: string,
+  negative: string,
+): number | null {
+  const dms = values[dmsKey];
+  if (!dms) return null;
+  return dmsToDecimal(dms, tags[refKey] ?? positive, positive, negative);
+}
+
 export function parseExif(bytes: Uint8Array): ExifData {
   const empty: ExifData = { tags: {} };
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
@@ -151,7 +186,9 @@ export function parseExif(bytes: Uint8Array): ExifData {
   if (r.u16(base + 2) !== 0x002a) return empty;
 
   const out: ExifData = { tags: {} };
-  const readIfd = (ifdOffset: number, names: Record<number, string>) => {
+  const gpsValues: Record<string, number[]> = {};
+
+  const readIfd = (ifdOffset: number, names: Record<number, string>, gps = false) => {
     if (ifdOffset + 2 > r.bytes) return;
     const count = r.u16(ifdOffset);
     for (let i = 0; i < count; i++) {
@@ -160,11 +197,15 @@ export function parseExif(bytes: Uint8Array): ExifData {
       const tag = r.u16(entry);
       const type = r.u16(entry + 2);
       const items = r.u32(entry + 4);
-      if (tag === TAG_EXIF_IFD) {
+      if (!gps && tag === TAG_EXIF_IFD) {
         readIfd(base + r.u32(entry + 8), EXIF_TAGS);
         continue;
       }
-      if (tag === TAG_AS_SHOT_NEUTRAL) {
+      if (!gps && tag === TAG_GPS_IFD) {
+        readIfd(base + r.u32(entry + 8), GPS_TAGS, true);
+        continue;
+      }
+      if (!gps && tag === TAG_AS_SHOT_NEUTRAL) {
         const value = readValue(r, base, type, items, entry + 8);
         if (Array.isArray(value) && value.length >= 3) {
           out.asShotNeutral = [value[0], value[1], value[2]];
@@ -175,11 +216,25 @@ export function parseExif(bytes: Uint8Array): ExifData {
       if (!name) continue;
       const value = readValue(r, base, type, items, entry + 8);
       if (value === null) continue;
+      if (gps && Array.isArray(value) && (name === "GPSLatitude" || name === "GPSLongitude")) {
+        gpsValues[name] = value;
+        continue;
+      }
       const text = format(name, value);
       if (text) out.tags[name] = text;
     }
   };
 
   readIfd(base + r.u32(base + 4), IFD0_TAGS);
+  const lat = parseGpsCoord(out.tags, gpsValues, "GPSLatitude", "GPSLatitudeRef", "N", "S");
+  const lng = parseGpsCoord(out.tags, gpsValues, "GPSLongitude", "GPSLongitudeRef", "E", "W");
+  if (lat != null) {
+    out.latitude = lat;
+    out.tags.GPSLatitude = String(lat);
+  }
+  if (lng != null) {
+    out.longitude = lng;
+    out.tags.GPSLongitude = String(lng);
+  }
   return out;
 }

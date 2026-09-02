@@ -4,7 +4,8 @@ import type { AgentActions } from "./agent/tools";
 import { photosFromFileList, photosFromScanned, loadRawPreview } from "./catalog/import";
 import { photoThumbSrc } from "./catalog/media";
 import { emptyPhoto, loadPhotos, loadPresets, openCatalog, savePresetRow, upsertPhoto, loadSnapshots, saveSnapshotRow, deleteSnapshotRow, loadCollections, saveCollectionRow, loadCollectionPhotoIds, addPhotoToCollection, removePhotoFromCollection, createVirtualCopy } from "./catalog/store";
-import { DEFAULT_LIBRARY_FILTERS, filterPhotos, sortPhotos, type LibraryFilters, type LibrarySort } from "./catalog/filter";
+import { DEFAULT_LIBRARY_FILTERS, filterPhotos, photoMatchesFilters, sortPhotos, type LibraryFilters, type LibrarySort } from "./catalog/filter";
+import { collapseStacks } from "./catalog/stacks";
 import { fileName, photoLabel, type Collection, type Photo, type Preset, type RecipeSnapshot } from "./catalog/types";
 import { fileExists, fileUrl, isTauri, pickFolder, pickSaveJpeg, scanFolder, writeFileBytes } from "./native";
 import { applyAspectPreset, cropZoom, defaultCrop, normalizeCrop } from "./recipe/crop";
@@ -22,11 +23,12 @@ import { HistogramView, Stars } from "./ui/controls";
 import { CropOverlay } from "./ui/crop";
 import { DevelopPanels } from "./ui/develop";
 import { Filmstrip, FolderList, LibraryGrid, MetaList, CollectionsList, SnapshotsList, LibraryToolbar, CompareView, LoupeView, SurveyView, nextLoupeZoom, type LibraryView, type LoupeZoom } from "./ui/library";
+import { MapView } from "./ui/map";
 import type { BrushToolSettings } from "./ui/masks";
 import { MaskOverlay } from "./ui/maskOverlay";
 import "./App.css";
 
-type Module = "library" | "develop";
+type Module = "library" | "develop" | "map";
 
 function samplePhoto(): Photo {
   return emptyPhoto({
@@ -95,6 +97,7 @@ export default function App() {
   const [quickFilterActive, setQuickFilterActive] = useState(false);
   const [autoAdvance, setAutoAdvance] = useState(true);
   const [compareSide, setCompareSide] = useState<"left" | "right">("left");
+  const [expandedStacks, setExpandedStacks] = useState<Set<string>>(() => new Set());
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const hostRef = useRef<HTMLDivElement>(null);
   const rendererRef = useRef<PreviewRenderer | null>(null);
@@ -110,13 +113,22 @@ export default function App() {
     let list = photos;
     if (folder) list = list.filter((p) => p.folder === folder);
     if (collectionId) {
-      const ids = new Set(collectionMembers[collectionId] ?? []);
-      list = list.filter((p) => ids.has(p.id));
+      const col = collections.find((c) => c.id === collectionId);
+      if (col?.kind === "smart" && col.rules) {
+        list = list.filter((p) => photoMatchesFilters(p, col.rules!));
+      } else {
+        const ids = new Set(collectionMembers[collectionId] ?? []);
+        list = list.filter((p) => ids.has(p.id));
+      }
     }
     if (quickFilterActive) list = list.filter((p) => p.quickCollection);
     list = filterPhotos(list, libraryFilters);
     return sortPhotos(list, librarySort);
-  }, [photos, folder, collectionId, collectionMembers, quickFilterActive, libraryFilters, librarySort]);
+  }, [photos, folder, collectionId, collectionMembers, collections, quickFilterActive, libraryFilters, librarySort]);
+  const gridPhotos = useMemo(
+    () => collapseStacks(visible, expandedStacks),
+    [visible, expandedStacks],
+  );
   const quickCount = useMemo(() => photos.filter((p) => p.quickCollection).length, [photos]);
   const folders = useMemo(() => [...new Set(photos.map((p) => p.folder))].sort(), [photos]);
 
@@ -817,12 +829,38 @@ export default function App() {
   async function onCreateCollection() {
     const name = window.prompt("Collection name");
     if (!name?.trim()) return;
-    const collection: Collection = { id: crypto.randomUUID(), name: name.trim() };
+    const collection: Collection = { id: crypto.randomUUID(), name: name.trim(), kind: "manual" };
     await saveCollectionRow(collection);
     setCollections((cols) => [...cols, collection].sort((a, b) => a.name.localeCompare(b.name)));
     setCollectionMembers((m) => ({ ...m, [collection.id]: [] }));
     setCollectionId(collection.id);
     setFolder(null);
+  }
+
+  async function onCreateSmartCollection() {
+    const name = window.prompt("Smart collection name (uses current library filters as rules)");
+    if (!name?.trim()) return;
+    const collection: Collection = {
+      id: crypto.randomUUID(),
+      name: name.trim(),
+      kind: "smart",
+      rules: { ...libraryFilters },
+    };
+    await saveCollectionRow(collection);
+    setCollections((cols) => [...cols, collection].sort((a, b) => a.name.localeCompare(b.name)));
+    setCollectionId(collection.id);
+    setFolder(null);
+    setQuickFilterActive(false);
+    setStatus(`Smart collection "${collection.name}" created from current filters`);
+  }
+
+  function toggleStack(stackId: string) {
+    setExpandedStacks((prev) => {
+      const next = new Set(prev);
+      if (next.has(stackId)) next.delete(stackId);
+      else next.add(stackId);
+      return next;
+    });
   }
 
   async function onAddPhotoToCollection() {
@@ -914,6 +952,9 @@ export default function App() {
         <button type="button" className={mod === "library" ? "on" : ""} onClick={() => setMod("library")}>
           Library
         </button>
+        <button type="button" className={mod === "map" ? "on" : ""} onClick={() => setMod("map")}>
+          Map
+        </button>
         <button type="button" className={mod === "develop" ? "on" : ""} onClick={() => setMod("develop")}>
           Develop
         </button>
@@ -991,6 +1032,7 @@ export default function App() {
             setFolder(null);
           }}
           onCreate={onCreateCollection}
+          onCreateSmart={onCreateSmartCollection}
           onAddPhoto={onAddPhotoToCollection}
           onRemovePhoto={onRemovePhotoFromCollection}
           canManagePhoto={!!photo && photo.kind !== "sample"}
@@ -1021,7 +1063,7 @@ export default function App() {
         ) : null}
       </aside>
 
-      <main className={`center${mod === "library" ? " library-mode" : ""}`}>
+      <main className={`center${mod === "library" || mod === "map" ? " library-mode" : ""}`}>
         <div
           ref={hostRef}
           className={`preview-host${view === "1:1" ? " zoom" : ""}${
@@ -1098,13 +1140,16 @@ export default function App() {
             />
             {libraryView === "grid" ? (
               <LibraryGrid
-                photos={visible}
+                photos={gridPhotos}
+                allPhotos={photos}
                 selectedId={selectedId}
+                expandedStacks={expandedStacks}
                 onSelect={setSelectedId}
                 onOpen={(id) => {
                   setSelectedId(id);
                   setMod("develop");
                 }}
+                onToggleStack={toggleStack}
               />
             ) : null}
             {libraryView === "compare" ? (
@@ -1135,6 +1180,19 @@ export default function App() {
                 }}
               />
             ) : null}
+          </div>
+        ) : null}
+        {mod === "map" ? (
+          <div className="library-shell">
+            <MapView
+              photos={visible}
+              selectedId={selectedId}
+              onSelect={setSelectedId}
+              onOpen={(id) => {
+                setSelectedId(id);
+                setMod("develop");
+              }}
+            />
           </div>
         ) : null}
       </main>
@@ -1222,13 +1280,7 @@ function defaultSettingsSafe(): AppSettings {
 }
 
 function mergePhotos(current: Photo[], added: Photo[]): Photo[] {
-  const ids = new Set(current.map((p) => p.id));
-  const next = current.filter((p) => p.kind !== "sample" || added.length === 0);
-  for (const p of added) {
-    if (!ids.has(p.id)) {
-      next.push(p);
-      ids.add(p.id);
-    }
-  }
-  return next;
+  const byId = new Map(current.filter((p) => p.kind !== "sample" || added.length === 0).map((p) => [p.id, p]));
+  for (const p of added) byId.set(p.id, p);
+  return [...byId.values()];
 }

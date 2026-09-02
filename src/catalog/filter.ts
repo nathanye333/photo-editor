@@ -85,3 +85,11 @@ export function uniqueCameras(photos: Photo[]): string[] {
 export function uniqueLenses(photos: Photo[]): string[] {
   return [...new Set(photos.map((p) => p.exif.LensModel).filter(Boolean) as string[])].sort();
 }
+
+export function photoMatchesFilters(photo: Photo, filters: LibraryFilters): boolean {
+  return filterPhotos([photo], filters).length > 0;
+}
+
+export function photosMatchingFilters(photos: Photo[], filters: LibraryFilters): Photo[] {
+  return filterPhotos(photos, filters);
+}

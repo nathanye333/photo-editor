@@ -4,21 +4,25 @@ import { bitmapFromBlob, bitmapFromRgb, thumbnailFromBitmap } from "../render/pr
 import { matchLensProfile } from "../render/lensProfiles";
 import { decodeRaw, fileExists, fileUrl, isTauri, writeThumb, type ScannedFile } from "../native";
 import { parseExif, type ExifData } from "./exif";
+import { assignBurstStacks } from "./stacks";
 import { emptyPhoto, upsertPhoto } from "./store";
 import { fileName, folderOf, photoId, type Photo } from "./types";
 
-function meta(photo: Photo, tags: Record<string, string> = {}): Photo {
-  const exif = {
+function meta(photo: Photo, exif: ExifData = { tags: {} }, tags: Record<string, string> = {}): Photo {
+  const merged = {
     file: fileName(photo.path),
     width: String(photo.width || ""),
     height: String(photo.height || ""),
     mtime: photo.mtime ? new Date(photo.mtime * 1000).toISOString() : "",
+    ...exif.tags,
     ...tags,
   };
-  const profile = matchLensProfile(exif);
+  const profile = matchLensProfile(merged);
   return {
     ...photo,
-    exif,
+    exif: merged,
+    latitude: exif.latitude ?? photo.latitude,
+    longitude: exif.longitude ?? photo.longitude,
     recipe: profile
       ? applyPatch(photo.recipe, { globals: { optics: { profileId: profile.id } } })
       : photo.recipe,
@@ -69,7 +73,7 @@ async function ingestBitmap(photo: Photo, blob: Blob): Promise<Photo> {
     bmp.close();
   }
   const exif = await readExifTags(blob);
-  return meta(photo, exif.tags);
+  return meta(photo, exif);
 }
 
 async function ingestRaw(photo: Photo, path: string): Promise<Photo> {
@@ -90,7 +94,7 @@ async function ingestRaw(photo: Photo, path: string): Promise<Photo> {
   } finally {
     bmp.close();
   }
-  return meta(photo, exif.tags);
+  return meta(photo, exif);
 }
 
 export async function photosFromScanned(existing: Photo[], files: ScannedFile[]): Promise<Photo[]> {
@@ -136,6 +140,11 @@ export async function photosFromScanned(existing: Photo[], files: ScannedFile[])
       added.push(row);
       await upsertPhoto(row);
     }
+  }
+  const stackUpdates = assignBurstStacks(existing, added);
+  for (const row of stackUpdates) {
+    if (!added.some((p) => p.id === row.id)) added.push(row);
+    await upsertPhoto(row);
   }
   return added;
 }
