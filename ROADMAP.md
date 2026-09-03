@@ -43,7 +43,9 @@ Core develop globals, minimal library, and the agent.
 
 - [x] Docked chat panel with keyword-based tool routing
 - [x] Tools: `apply_develop_patch`, `apply_catalog_patch`, `apply_preset`, `copy_settings`, `reset_recipe`
-- [x] Privacy model: recipe, histogram, and EXIF only — no photo pixels uploaded
+- [x] Local scene tools (`analyze_scene`, `sample_at`) + suggested mask UVs
+- [x] Opt-in cloud preview vision (`sendPreview`, default on) — small develop JPEG to the model provider
+- [x] Live tool / reasoning timeline in agent chat
 - [x] Eval suite (`evals/develop-v1.jsonl`)
 
 ### Stubs (typed or UI present, not functional)
@@ -68,11 +70,11 @@ Highest-impact develop gap. Schema is ready in `src/recipe/types.ts`.
 - [x] Per-mask develop params (partial `Globals` override — exposure/tone subset in UI)
 - [x] WebGL mask compositing in preview renderer
 - [x] Agent tool support for mask patches (`upsert_mask` / `upsert_brush_mask` / `upsert_luminance_mask` / `upsert_color_mask` / `remove_mask`)
-- [ ] Semantic mask component (typed; model integration TBD)
+- [x] Semantic mask component (coverage alpha + local Transformers.js / heuristic segmenter)
 
-**Exit criteria:** Apply a radial gradient exposure boost to a subject; see it in preview, undo, export, and via agent. **Met.** Brush / color / luma selection also shipped.
+**Exit criteria:** Apply a radial gradient exposure boost to a subject; see it in preview, undo, export, and via agent. **Met.** Brush / color / luma / semantic selection also shipped.
 
-**Still deferred:** semantic/subject AI; rename/reorder UI; full per-mask Basic panel; mask overlay visualization.
+**Still deferred:** rename/reorder UI; full per-mask Basic panel; mask overlay visualization for all kinds.
 
 ---
 
@@ -250,7 +252,7 @@ Features where Field intentionally diverges from Lightroom:
 
 | Feature | Notes |
 |---|---|
-| **Privacy-first agent** | Edits recipe locally; no pixel upload. Lightroom AI features are cloud-dependent. |
+| **Privacy-aware agent** | Recipe edits stay local. Preview vision is opt-in (default on) and only sends a small JPEG; turn off in Settings. Semantic masks run on-device. |
 | **Reference-based import** | No vault lock-in; photos remain where they are on disk. |
 | **Unified recipe model** | One JSON recipe shared by sliders, WebGL preview, and agent tools. |
 | **Original branding** | Lightroom-inspired layout, not a clone. |
@@ -261,7 +263,7 @@ Features where Field intentionally diverges from Lightroom:
 
 ```
 v1    ✅  Globals, library basics, agent, JPEG export
-v1.5  ✅  Masks (linear + canvas handles shipped; semantic next)
+v1.5  ✅  Masks (linear + canvas handles + semantic coverage)
 v1.6  ✅  RAW decode + crop / transform
 v1.7  ✅  Develop depth
 v2.0  ✓   Smart collections, stacks, map module shipped

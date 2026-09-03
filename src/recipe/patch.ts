@@ -335,10 +335,19 @@ function normalizeComponent(c: MaskComponent): MaskComponent {
     };
   }
   if (c.type === "semantic") {
+    const width = Math.max(0, Math.round(num(c.width, 0)));
+    const height = Math.max(0, Math.round(num(c.height, 0)));
+    const alpha =
+      Array.isArray(c.alpha) && width > 0 && height > 0
+        ? Array.from({ length: width * height }, (_, i) =>
+            Math.max(0, Math.min(255, Math.round(num(c.alpha![i], 0)))),
+          )
+        : undefined;
     return {
       type: "semantic",
       label: typeof c.label === "string" ? c.label : "subject",
       model: typeof c.model === "string" ? c.model : "default",
+      ...(width && height && alpha ? { width, height, alpha } : {}),
     };
   }
   const strokes = Array.isArray(c.strokes)

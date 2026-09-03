@@ -210,3 +210,36 @@ export function createColorRangeMask(
     partial,
   );
 }
+
+/** Semantic coverage mask from local segmentation (alpha 0–255, row-major). */
+export function createSemanticMask(
+  partial?: MaskMeta & {
+    label?: string;
+    model?: string;
+    width?: number;
+    height?: number;
+    alpha?: number[] | Uint8Array;
+  },
+): Mask {
+  const label = partial?.label ?? "subject";
+  const { name, id } = allocName(label[0].toUpperCase() + label.slice(1));
+  const width = partial?.width ?? 0;
+  const height = partial?.height ?? 0;
+  const alpha =
+    partial?.alpha && width > 0 && height > 0
+      ? Array.from(partial.alpha).slice(0, width * height)
+      : undefined;
+  return baseMask(
+    name,
+    id,
+    [
+      {
+        type: "semantic",
+        label,
+        model: partial?.model ?? "default",
+        ...(width && height && alpha ? { width, height, alpha } : {}),
+      },
+    ],
+    partial,
+  );
+}

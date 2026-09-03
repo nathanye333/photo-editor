@@ -30,3 +30,6 @@
 {"id":"auto-tone","instruction":"auto tone this shot","expectedCategories":["tone"],"expectedTool":"auto_tone"}
 {"id":"mono-profile","instruction":"make it black and white","expectedCategories":["tone","color"],"expectedTool":"set_camera_profile"}
 {"id":"calibration-primaries","instruction":"boost the blue primary in the calibration panel","expectedCategories":["color"],"expectedPatch":{"globals":{"calibration":{"blueSat":25}}},"mode":"absolute"}
+{"id":"analyze-sky","instruction":"analyze the scene and darken the sky","expectedCategories":["masks","tone"],"expectedTool":"analyze_scene"}
+{"id":"semantic-subject","instruction":"select the subject with a semantic mask and brighten it","expectedCategories":["masks","tone"],"expectedTool":"create_semantic_mask"}
+{"id":"sample-color","instruction":"sample the color in the center and make a color range mask","expectedCategories":["masks","color"],"expectedTool":"sample_at"}

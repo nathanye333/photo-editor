@@ -1,16 +1,77 @@
 import { useState } from "react";
 import type { ToolCategory } from "../agent/router";
+import { summarizeTraceValue, toolCount, type AgentStep } from "../agent/trace";
 
 export type ChatMsg = {
   role: "user" | "assistant" | "error";
   text: string;
   categories?: ToolCategory[];
+  steps?: AgentStep[];
+  status?: "streaming" | "done" | "error";
+  previewSent?: boolean;
 };
+
+function TraceTimeline({ steps, status }: { steps: AgentStep[]; status?: ChatMsg["status"] }) {
+  const tools = toolCount(steps);
+  const hasReasoning = steps.some((s) => s.kind === "reasoning" && s.text.trim());
+  const [open, setOpen] = useState(status === "streaming");
+  const label =
+    status === "streaming"
+      ? tools
+        ? `Working… ${tools} tool${tools === 1 ? "" : "s"}`
+        : hasReasoning
+          ? "Thinking…"
+          : "Working…"
+      : tools
+        ? `Used ${tools} tool${tools === 1 ? "" : "s"}`
+        : hasReasoning
+          ? "Thought"
+          : null;
+  if (!label && !steps.length) return null;
+  return (
+    <div className="trace">
+      <button type="button" className="trace-toggle" onClick={() => setOpen((o) => !o)}>
+        {open ? "▾" : "▸"} {label ?? "Trace"}
+      </button>
+      {open ? (
+        <ol className="trace-list">
+          {steps.map((s) => {
+            if (s.kind === "reasoning") {
+              if (!s.text.trim()) return null;
+              return (
+                <li key={s.id} className="trace-item reasoning">
+                  <span className="trace-kind">Thought</span>
+                  <pre>{s.text}</pre>
+                </li>
+              );
+            }
+            if (s.kind === "tool") {
+              return (
+                <li key={s.id} className={`trace-item tool${s.error ? " err" : ""}`}>
+                  <span className="trace-kind">{s.name}</span>
+                  {s.args !== undefined ? (
+                    <pre className="trace-args">{summarizeTraceValue(s.args)}</pre>
+                  ) : null}
+                  {s.result !== undefined ? (
+                    <pre className="trace-result">{summarizeTraceValue(s.result)}</pre>
+                  ) : null}
+                  {s.error ? <pre className="trace-error">{s.error}</pre> : null}
+                </li>
+              );
+            }
+            return null;
+          })}
+        </ol>
+      ) : null}
+    </div>
+  );
+}
 
 export function AgentChat(props: {
   messages: ChatMsg[];
   busy: boolean;
   hasKey: boolean;
+  sendPreview: boolean;
   onSend: (text: string) => void;
   onOpenSettings: () => void;
 }) {
@@ -30,16 +91,23 @@ export function AgentChat(props: {
           </p>
         ) : null}
         {props.messages.map((m, i) => (
-          <div key={i} className={`msg ${m.role}`}>
-            <p>{m.text}</p>
-            {m.categories?.length ? <small>{m.categories.join(" · ")}</small> : null}
+          <div key={i} className={`msg ${m.role}${m.status === "streaming" ? " streaming" : ""}`}>
+            {m.steps?.length ? <TraceTimeline steps={m.steps} status={m.status} /> : null}
+            {m.text ? <p>{m.text}</p> : m.status === "streaming" ? <p className="stub">…</p> : null}
+            <div className="msg-meta">
+              {m.categories?.length ? <small>{m.categories.join(" · ")}</small> : null}
+              {m.previewSent ? <small className="preview-sent">Preview sent</small> : null}
+            </div>
           </div>
         ))}
       </div>
       {!props.hasKey ? (
         <p className="stub pad">
-          Add an API key in Settings. Photos stay on disk; only recipe + histogram + EXIF are sent.
+          Add an API key in Settings. Recipe, histogram, and EXIF are always sent
+          {props.sendPreview ? "; a small preview JPEG is sent when Preview vision is on." : "."}
         </p>
+      ) : props.sendPreview ? (
+        <p className="stub pad">Preview vision on — a small JPEG of the current develop preview is sent with each turn.</p>
       ) : null}
       <form
         className="agent-in"
@@ -76,7 +144,12 @@ export function SettingsModal(props: {
   apiKey: string;
   baseURL: string;
   model: string;
-  onChange: (field: "apiKey" | "baseURL" | "model", value: string) => void;
+  sendPreview: boolean;
+  visionMaxEdge: number;
+  onChange: (
+    field: "apiKey" | "baseURL" | "model" | "sendPreview" | "visionMaxEdge",
+    value: string | boolean | number,
+  ) => void;
   onClose: () => void;
 }) {
   return (
@@ -100,7 +173,30 @@ export function SettingsModal(props: {
           Model
           <input value={props.model} onChange={(e) => props.onChange("model", e.target.value)} />
         </label>
-        <p className="stub">Stored locally. Never uploaded with photos.</p>
+        <label className="check-row">
+          <input
+            type="checkbox"
+            checked={props.sendPreview}
+            onChange={(e) => props.onChange("sendPreview", e.target.checked)}
+          />
+          Send preview image
+        </label>
+        <p className="stub">
+          When enabled, a small JPEG of the current develop preview is sent to your model provider. Use a
+          vision-capable model (e.g. gpt-4o / gpt-4o-mini).
+        </p>
+        <label>
+          Preview max edge (px)
+          <input
+            type="number"
+            min={256}
+            max={1536}
+            step={64}
+            value={props.visionMaxEdge}
+            onChange={(e) => props.onChange("visionMaxEdge", Number(e.target.value) || 768)}
+          />
+        </label>
+        <p className="stub">Settings are stored locally.</p>
         <button type="button" className="btn" onClick={props.onClose}>
           Done
         </button>

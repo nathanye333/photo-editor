@@ -97,15 +97,20 @@ const KEYWORDS: Record<ToolCategory, string[]> = {
     "luma",
     "color range",
     "select",
+    "sky",
+    "sample",
+    "analyze",
+    "scene",
+    "semantic",
   ],
   geometry: ["crop", "straighten", "rotate", "aspect", "4:5", "16:9", "square", "frame", "composition"],
 };
 
 export const CATEGORY_DOCS: Record<ToolCategory, string> = {
   tone:
-    "Tone: exposure (EV), contrast, highlights, shadows, whites, blacks, and parametric toneCurve via apply_develop_patch deltas. auto_tone sets a whole tone starting point from the image itself. For an S-curve, a matte fade, or a per-channel cast use set_tone_curve_points (channel rgb|red|green|blue).",
+    "Tone: exposure (EV), contrast, highlights, shadows, whites, blacks, and parametric toneCurve via apply_develop_patch deltas. auto_tone sets a whole tone starting point from the image itself. For an S-curve, a matte fade, or a per-channel cast use set_tone_curve_points (channel rgb|red|green|blue). Call analyze_scene when you need clip/region context before large tone moves.",
   color:
-    "Color: temp/tint (-100..100), vibrance, saturation, hsl.{red,orange,yellow,green,aqua,blue,purple,magenta}.{hue,sat,lum}. For split toning or a cinematic look use apply_color_grading (shadows/midtones/highlights wheels with hue 0-360, sat 0-100, lum -100..100, plus blending and balance). set_camera_profile switches the base rendering (color/portrait/landscape/neutral/mono) and calibration.{shadowTint,red|green|blueHue,red|green|blueSat} tweaks the primaries.",
+    "Color: temp/tint (-100..100), vibrance, saturation, hsl.{red,orange,yellow,green,aqua,blue,purple,magenta}.{hue,sat,lum}. For split toning or a cinematic look use apply_color_grading (shadows/midtones/highlights wheels with hue 0-360, sat 0-100, lum -100..100, plus blending and balance). set_camera_profile switches the base rendering (color/portrait/landscape/neutral/mono) and calibration.{shadowTint,red|green|blueHue,red|green|blueSat} tweaks the primaries. sample_at({x,y}) reads source hue/chroma at a UV.",
   detail:
     "Detail/presence: texture (fine), clarity (mid), dehaze; sharpening with sharpenRadius/sharpenDetail/sharpenMasking; noiseReduction (luminance) with noiseReductionDetail, plus colorNoiseReduction and moire. Raise sharpenMasking to keep sharpening off skin; negative texture smooths it.",
   optics:
@@ -114,7 +119,7 @@ export const CATEGORY_DOCS: Record<ToolCategory, string> = {
     "Catalog: apply_catalog_patch with rating, flag, keywords, colorLabel, title/caption/copyright/creator, quickCollection.",
   presets: "Presets: apply_preset by name, reset_recipe, copy_settings.",
   masks:
-    "Masks: upsert_brush_mask (paint stamps), upsert_color_mask (hue/chroma), upsert_luminance_mask (brightness range), upsert_mask (radial), upsert_linear_mask (gradient line), remove_mask. Prefer brush/color/luma for selecting areas.",
+    "Masks: analyze_scene returns regional stats + suggestedMasks (prefer those UVs). sample_at samples source colour. upsert_brush_mask / upsert_color_mask / upsert_luminance_mask / upsert_mask (radial) / upsert_linear_mask / remove_mask. create_semantic_mask({label: subject|sky|person}) runs local segmentation. Prefer brush/color/luma/semantic for selecting areas.",
   geometry:
     "Geometry: apply_crop_patch with enabled, normalized x/y/width/height, angle (-45..45), aspect original|1:1|4:5|16:9|custom.",
 };

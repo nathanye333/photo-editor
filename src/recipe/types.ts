@@ -148,9 +148,18 @@ export type BrushStroke = {
   erase: boolean;
 };
 
-/** Local adjustments. Radial, brush, luminance range, and color range are rendered. */
+/** Local adjustments. Radial, brush, luminance range, color range, and semantic coverage are rendered. */
 export type MaskComponent =
-  | { type: "semantic"; label: string; model: string }
+  | {
+      type: "semantic";
+      label: string;
+      model: string;
+      /** Coverage map width/height when alpha is present. */
+      width?: number;
+      height?: number;
+      /** Row-major alpha 0–255; optional for legacy recipes. */
+      alpha?: number[];
+    }
   | {
       type: "linear";
       start: [number, number];
@@ -332,5 +341,6 @@ export function maskKindLabel(mask: Mask): string {
   if (c.type === "color_range") return "Color";
   if (c.type === "radial") return "Radial";
   if (c.type === "linear") return "Linear";
+  if (c.type === "semantic") return c.label ? `Semantic (${c.label})` : "Semantic";
   return "Mask";
 }

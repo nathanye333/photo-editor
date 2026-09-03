@@ -30,6 +30,8 @@ type Props = {
   onAddBrushMask: () => void;
   onAddLuminanceMask: () => void;
   onAddColorMask: () => void;
+  onAddSubjectMask?: () => void;
+  onAddSkyMask?: () => void;
   onRemoveMask: () => void;
   onLiveMask: (mask: Mask) => void;
   onBrushTool: (next: Partial<BrushToolSettings>) => void;
@@ -58,6 +60,8 @@ export function DevelopPanels({
   onAddBrushMask,
   onAddLuminanceMask,
   onAddColorMask,
+  onAddSubjectMask,
+  onAddSkyMask,
   onRemoveMask,
   onLiveMask,
   onBrushTool,
@@ -303,6 +307,8 @@ export function DevelopPanels({
         onAddBrush={onAddBrushMask}
         onAddLuminance={onAddLuminanceMask}
         onAddColor={onAddColorMask}
+        onAddSubject={onAddSubjectMask}
+        onAddSky={onAddSkyMask}
         onRemove={onRemoveMask}
         onLiveMask={onLiveMask}
         onCommit={onCommit}

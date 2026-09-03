@@ -19,7 +19,9 @@ Needs a Rust toolchain for the Tauri shell. The Vite app works alone for Develop
 - Import by reference (JPEG / PNG / WebP). RAW is catalogued without a preview.
 - Develop globals (WebGL2): tone, WB, HSL, tone curve, presence
 - Histogram, Before (`\`), fit / 1:1, undo, copy/paste, presets, JPEG export
-- Docked agent (`apply_develop_patch` and catalog/preset tools). API key in Settings. No photo pixels are uploaded.
+- Docked agent (`apply_develop_patch` and catalog/preset/mask tools). API key in Settings.
+- Agent can analyze the scene locally and optionally send a small develop-preview JPEG when **Preview vision** is enabled (default on). Turn it off in Settings to keep pixels on-device.
+- Tool / reasoning timeline in the agent chat shows live tool calls.
 
 ## v1.5 (masks)
 
@@ -28,5 +30,6 @@ Needs a Rust toolchain for the Tauri shell. The Vite app works alone for Develop
 - **Luminance range** — select by brightness; click to center the range
 - **Radial** — soft oval falloff
 - WebGL multi-pass compositing; agent tools for each mask kind
+- **Subject / Sky** semantic masks via local segmentation (Transformers.js with heuristic fallback)
 
 See [ROADMAP.md](ROADMAP.md) for linear / semantic masks and later tiers.

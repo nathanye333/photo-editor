@@ -780,12 +780,103 @@ h3 {
   color: var(--muted);
 }
 
+.msg-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 4px;
+}
+
 .msg.user {
   color: var(--accent);
 }
 
 .msg.error {
   color: var(--danger);
+}
+
+.msg.streaming .stub {
+  opacity: 0.7;
+}
+
+.preview-sent {
+  color: var(--accent-dim);
+}
+
+.trace {
+  margin-bottom: 6px;
+}
+
+.trace-toggle {
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  padding: 0;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.trace-toggle:hover {
+  color: var(--text);
+}
+
+.trace-list {
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.trace-item {
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 6px 8px;
+  background: var(--bg);
+}
+
+.trace-item.err {
+  border-color: var(--danger);
+}
+
+.trace-kind {
+  display: block;
+  font-weight: 600;
+  color: var(--accent);
+  margin-bottom: 4px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+}
+
+.trace-item.reasoning .trace-kind {
+  color: var(--muted);
+}
+
+.trace-item pre {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 10px;
+  color: var(--muted);
+  max-height: 120px;
+  overflow: auto;
+}
+
+.trace-error {
+  color: var(--danger) !important;
+}
+
+.modal .check-row {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  color: var(--text);
+}
+
+.modal .check-row input {
+  width: auto;
 }
 
 .agent-in {

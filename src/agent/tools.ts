@@ -19,6 +19,8 @@ import {
 import { CAMERA_PROFILES } from "../render/cameraProfiles";
 import { LENS_PROFILES } from "../render/lensProfiles";
 import type { CatalogFields } from "../catalog/types";
+import type { SceneAnalysis } from "./scene";
+import type { SourceSample } from "../render/preview";
 
 const hslChannel = z.object({
   hue: z.number().optional(),
@@ -60,15 +62,29 @@ const maskParamsSchema = z.object({
 });
 
 function summarizeMasks(masks: Mask[]) {
-  return masks.map((m) => ({
-    id: m.id,
-    name: m.name,
-    kind: primaryComponent(m)?.type ?? "unknown",
-    invert: m.invert,
-    density: m.density,
-    params: m.params,
-    component: primaryComponent(m),
-  }));
+  return masks.map((m) => {
+    const component = primaryComponent(m);
+    const safeComponent =
+      component?.type === "semantic"
+        ? {
+            type: "semantic" as const,
+            label: component.label,
+            model: component.model,
+            width: component.width,
+            height: component.height,
+            hasCoverage: Boolean(component.alpha?.length),
+          }
+        : component;
+    return {
+      id: m.id,
+      name: m.name,
+      kind: component?.type ?? "unknown",
+      invert: m.invert,
+      density: m.density,
+      params: m.params,
+      component: safeComponent,
+    };
+  });
 }
 
 export type AgentActions = {
@@ -81,6 +97,18 @@ export type AgentActions = {
   applyPreset: (name: string) => string;
   copySettings: () => void;
   resetRecipe: () => EditRecipe;
+  /** Local scene analysis over source pixels (no upload). */
+  analyzeScene: () => SceneAnalysis | null;
+  /** Sample source colour at normalized UV (origin top-left). */
+  sampleAt: (x: number, y: number) => SourceSample | null;
+  /**
+   * Local semantic segmentation → coverage mask.
+   * label: subject | sky | person
+   */
+  createSemanticMask: (
+    label: "subject" | "sky" | "person",
+    params?: Mask["params"],
+  ) => Promise<{ ok: true; maskId: string; masks: ReturnType<typeof summarizeMasks> } | { ok: false; error: string }>;
 };
 
 export function createAgentTools(actions: AgentActions) {
@@ -418,6 +446,60 @@ export function createAgentTools(actions: AgentActions) {
         const recipe = actions.patchDevelop({ masks: { remove: [id] } });
         return { ok: true, masks: summarizeMasks(recipe.masks) };
       },
+    }),
+    analyze_scene: tool({
+      description:
+        "Analyse the source image locally (no upload): regional luma, dominant hues, 5×5 grid, and suggestedMasks with UVs. Call before placing sky/subject masks when geometry is unclear.",
+      inputSchema: z.object({}),
+      execute: async () => {
+        const scene = actions.analyzeScene();
+        if (!scene) return { ok: false, error: "No image loaded" };
+        return {
+          ok: true,
+          width: scene.width,
+          height: scene.height,
+          global: {
+            meanLuma: Number(scene.global.meanLuma.toFixed(3)),
+            clipLow: Number(scene.global.clipLow.toFixed(3)),
+            clipHigh: Number(scene.global.clipHigh.toFixed(3)),
+          },
+          regions: Object.fromEntries(
+            Object.entries(scene.regions).map(([k, v]) => [
+              k,
+              { meanLuma: Number(v.meanLuma.toFixed(3)), clipHigh: Number(v.clipHigh.toFixed(3)) },
+            ]),
+          ),
+          dominantHues: scene.dominantHues,
+          suggestedMasks: scene.suggestedMasks,
+          grid: scene.grid.map((c) => ({
+            x: Number(c.x.toFixed(2)),
+            y: Number(c.y.toFixed(2)),
+            meanLuma: Number(c.meanLuma.toFixed(3)),
+          })),
+        };
+      },
+    }),
+    sample_at: tool({
+      description:
+        "Sample undeveloped source colour at normalized UV (origin top-left). Use before upsert_color_mask.",
+      inputSchema: z.object({
+        x: z.number().min(0).max(1),
+        y: z.number().min(0).max(1),
+      }),
+      execute: async ({ x, y }) => {
+        const sample = actions.sampleAt(x, y);
+        if (!sample) return { ok: false, error: "No image loaded" };
+        return { ok: true, ...sample };
+      },
+    }),
+    create_semantic_mask: tool({
+      description:
+        "Run local (on-device) semantic segmentation and create a mask with coverage for subject, sky, or person. Prefer this over brush stamps for subject/sky selection.",
+      inputSchema: z.object({
+        label: z.enum(["subject", "sky", "person"]),
+        params: maskParamsSchema.optional(),
+      }),
+      execute: async ({ label, params }) => actions.createSemanticMask(label, params),
     }),
     apply_crop_patch: tool({
       description:

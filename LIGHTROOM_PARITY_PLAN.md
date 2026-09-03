@@ -68,11 +68,11 @@ Highest-impact develop gap. Schema is ready in `src/recipe/types.ts`.
 - [x] Per-mask develop params (partial `Globals` override — exposure/tone subset in UI)
 - [x] WebGL mask compositing in preview renderer
 - [x] Agent tool support for mask patches (`upsert_mask` / `upsert_brush_mask` / `upsert_luminance_mask` / `upsert_color_mask` / `remove_mask`)
-- [ ] Semantic mask component (typed; model integration TBD)
+- [x] Semantic mask component (coverage alpha + local Transformers.js / heuristic segmenter)
 
-**Exit criteria:** Apply a radial gradient exposure boost to a subject; see it in preview, undo, export, and via agent. **Met.** Brush / color / luma selection also shipped.
+**Exit criteria:** Apply a radial gradient exposure boost to a subject; see it in preview, undo, export, and via agent. **Met.** Brush / color / luma / semantic selection also shipped.
 
-**Still deferred:** semantic/subject AI; rename/reorder UI; full per-mask Basic panel; mask overlay visualization.
+**Still deferred:** rename/reorder UI; full per-mask Basic panel; mask overlay visualization for all kinds.
 
 ---
 

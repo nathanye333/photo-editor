@@ -29,6 +29,8 @@ type Props = {
   onAddBrush: () => void;
   onAddLuminance: () => void;
   onAddColor: () => void;
+  onAddSubject?: () => void;
+  onAddSky?: () => void;
   onRemove: () => void;
   onLiveMask: (mask: Mask) => void;
   onCommit: () => void;
@@ -52,6 +54,8 @@ export function MasksPanel({
   onAddBrush,
   onAddLuminance,
   onAddColor,
+  onAddSubject,
+  onAddSky,
   onRemove,
   onLiveMask,
   onCommit,
@@ -146,6 +150,16 @@ export function MasksPanel({
         <button type="button" onClick={onAddLinear}>
           Linear
         </button>
+        {onAddSubject ? (
+          <button type="button" onClick={onAddSubject}>
+            Subject
+          </button>
+        ) : null}
+        {onAddSky ? (
+          <button type="button" onClick={onAddSky}>
+            Sky
+          </button>
+        ) : null}
         <button type="button" onClick={onRemove} disabled={!selected}>
           Delete
         </button>
@@ -468,6 +482,18 @@ export function MasksPanel({
               onCommit();
             }}
           />
+          {localParams}
+        </>
+      ) : null}
+
+      {selected && component?.type === "semantic" ? (
+        <>
+          {sharedMaskChrome}
+          <p className="stub">
+            Local segmentation ({component.label}
+            {component.model ? ` · ${component.model}` : ""}
+            {component.alpha ? "" : " · no coverage yet"}).
+          </p>
           {localParams}
         </>
       ) : null}

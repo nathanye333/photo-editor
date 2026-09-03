@@ -20,7 +20,30 @@ import {
 import { rasterizeBrushStrokes, rgbToHueChroma } from "./brushRaster";
 import { cameraProfile } from "./cameraProfiles";
 import { lensProfile } from "./lensProfiles";
-import {
+
+/** Upsample a semantic alpha map into an RGBA weight texture matching the FBO size. */
+export function semanticCoverageToRgba(
+  alpha: ArrayLike<number>,
+  srcW: number,
+  srcH: number,
+  dstW: number,
+  dstH: number,
+): Uint8Array {
+  const out = new Uint8Array(dstW * dstH * 4);
+  for (let y = 0; y < dstH; y++) {
+    const sy = Math.min(srcH - 1, Math.floor((y * srcH) / dstH));
+    for (let x = 0; x < dstW; x++) {
+      const sx = Math.min(srcW - 1, Math.floor((x * srcW) / dstW));
+      const a = alpha[sy * srcW + sx] ?? 0;
+      const i = (y * dstW + x) * 4;
+      out[i] = a;
+      out[i + 1] = a;
+      out[i + 2] = a;
+      out[i + 3] = 255;
+    }
+  }
+  return out;
+}import {
   BLIT_FRAG,
   FRAG,
   MIX_FRAG,
@@ -122,7 +145,12 @@ function isRenderableComponent(c: MaskComponent | null): boolean {
       c.type === "linear" ||
       c.type === "brush" ||
       c.type === "luminance_range" ||
-      c.type === "color_range")
+      c.type === "color_range" ||
+      (c.type === "semantic" &&
+        !!c.alpha &&
+        !!c.width &&
+        !!c.height &&
+        c.alpha.length >= c.width * c.height))
   );
 }
 
@@ -269,6 +297,11 @@ export class PreviewRenderer {
   /** Stats over the undeveloped source, so auto tone is not fed its own output. */
   sourceStats(): PixelStats | null {
     return this.sourcePixels ? analyzePixels(this.sourcePixels.data, 4) : null;
+  }
+
+  /** Raw undeveloped source pixels for local scene analysis (do not mutate). */
+  sourceImageData(): ImageData | null {
+    return this.sourcePixels;
   }
 
   /** Sample source image at normalized UV (origin top-left). */
@@ -496,6 +529,24 @@ export class PreviewRenderer {
       gl.bindTexture(gl.TEXTURE_2D, this.brushTex);
       gl.uniform1i(loc(gl, this.blitProgram, "uTex"), 0);
       gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+      return;
+    }
+
+    if (
+      component.type === "semantic" &&
+      component.alpha &&
+      component.width &&
+      component.height
+    ) {
+      const rgba = semanticCoverageToRgba(component.alpha, component.width, component.height, w, h);
+      gl.bindTexture(gl.TEXTURE_2D, this.brushTex);
+      gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, 0);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, rgba);
+      gl.useProgram(this.blitProgram);
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, this.brushTex);
+      gl.uniform1i(loc(gl, this.blitProgram, "uTex"), 0);
+      gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
     }
   }
 
@@ -632,6 +683,28 @@ export class PreviewRenderer {
     this.canvas.height = prevH;
     this.schedule();
     return blob;
+  }
+
+  /**
+   * Capture the current developed look as a downscaled JPEG for multimodal agent turns.
+   * Uses the on-screen canvas (already developed) rather than a full-res export.
+   */
+  async visionThumbnail(maxEdge = 768, quality = 0.82): Promise<Blob | null> {
+    if (!this.image) return null;
+    this.render();
+    const src = this.canvas;
+    const scale = Math.min(1, maxEdge / Math.max(src.width, src.height));
+    const w = Math.max(1, Math.round(src.width * scale));
+    const h = Math.max(1, Math.round(src.height * scale));
+    const c = document.createElement("canvas");
+    c.width = w;
+    c.height = h;
+    const ctx = c.getContext("2d");
+    if (!ctx) return null;
+    ctx.drawImage(src, 0, 0, w, h);
+    return await new Promise((resolve) => {
+      c.toBlob((b) => resolve(b), "image/jpeg", quality);
+    });
   }
 
   dispose() {

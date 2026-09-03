@@ -9,7 +9,7 @@ import { collapseStacks } from "./catalog/stacks";
 import { fileName, photoLabel, type Collection, type Photo, type Preset, type RecipeSnapshot } from "./catalog/types";
 import { fileExists, fileUrl, isTauri, pickFolder, pickSaveJpeg, scanFolder, writeFileBytes } from "./native";
 import { applyAspectPreset, cropZoom, defaultCrop, normalizeCrop } from "./recipe/crop";
-import { cloneRecipe, createBrushMask, createColorRangeMask, createLinearMask, createLuminanceMask, createRadialMask, defaultRecipe } from "./recipe/defaults";
+import { cloneRecipe, createBrushMask, createColorRangeMask, createLinearMask, createLuminanceMask, createRadialMask, createSemanticMask, defaultRecipe } from "./recipe/defaults";
 import { autoTone } from "./recipe/auto";
 import { pushHistory, redo, undo } from "./recipe/history";
 import { applyCatalogPatch, applyPatch, defaultCatalogFields } from "./recipe/patch";
@@ -19,6 +19,8 @@ import { bitmapFromBlob, PreviewRenderer, thumbnailFromBitmap, type HistogramSta
 import { createSampleBitmap } from "./render/sampleImage";
 import { loadSettings, saveSettings, type AppSettings } from "./settings";
 import { AgentChat, SettingsModal, type ChatMsg } from "./ui/agentChat";
+import { analyzeScene, summarizeScene } from "./agent/scene";
+import { segmentImage, type SemanticLabel } from "./ml/segment";
 import { HistogramView, Stars } from "./ui/controls";
 import { CropOverlay } from "./ui/crop";
 import { DevelopPanels } from "./ui/develop";
@@ -416,6 +418,30 @@ export default function App() {
     addMask(createColorRangeMask({ params: { exposure: 0.4 } }));
   }
 
+  async function addSemanticMask(label: SemanticLabel) {
+    const pixels = rendererRef.current?.sourceImageData();
+    if (!pixels) {
+      setStatus("No image loaded");
+      return;
+    }
+    setStatus(`Segmenting ${label}…`);
+    try {
+      const seg = await segmentImage(pixels, label);
+      const mask = createSemanticMask({
+        label,
+        model: seg.model,
+        width: seg.width,
+        height: seg.height,
+        alpha: seg.alpha,
+        params: label === "sky" ? { exposure: -0.25, highlights: -20 } : { exposure: 0.35, shadows: 15 },
+      });
+      addMask(mask);
+      setStatus(`${label} mask ready (${seg.model})`);
+    } catch (err) {
+      setStatus(err instanceof Error ? err.message : "Segmentation failed");
+    }
+  }
+
   function removeSelectedMask() {
     const current = photoRef.current;
     if (!current || !selectedMaskId) return;
@@ -677,6 +703,59 @@ export default function App() {
       if (photoRef.current) setClipboard(cloneRecipe(photoRef.current.recipe));
     },
     resetRecipe: () => commitRecipe(defaultRecipe()),
+    analyzeScene: () => {
+      const pixels = rendererRef.current?.sourceImageData();
+      return pixels ? analyzeScene(pixels) : null;
+    },
+    sampleAt: (x, y) => rendererRef.current?.sampleSource(x, y) ?? null,
+    createSemanticMask: async (label, params) => {
+      const pixels = rendererRef.current?.sourceImageData();
+      if (!pixels) return { ok: false, error: "No image loaded" };
+      try {
+        const seg = await segmentImage(pixels, label);
+        const mask = createSemanticMask({
+          label,
+          model: seg.model,
+          width: seg.width,
+          height: seg.height,
+          alpha: seg.alpha,
+          params: params ?? (label === "sky" ? { exposure: -0.25, highlights: -20 } : { exposure: 0.35 }),
+        });
+        const recipe = commitRecipe(
+          applyPatch(photoRef.current?.recipe ?? defaultRecipe(), { masks: { upsert: [mask] } }, "absolute"),
+        );
+        setSelectedMaskId(mask.id);
+        return {
+          ok: true,
+          maskId: mask.id,
+          masks: recipe.masks.map((m) => {
+            const component = primaryComponent(m);
+            const safeComponent =
+              component?.type === "semantic"
+                ? {
+                    type: "semantic" as const,
+                    label: component.label,
+                    model: component.model,
+                    width: component.width,
+                    height: component.height,
+                    hasCoverage: Boolean(component.alpha?.length),
+                  }
+                : component;
+            return {
+              id: m.id,
+              name: m.name,
+              kind: component?.type ?? "unknown",
+              invert: m.invert,
+              density: m.density,
+              params: m.params,
+              component: safeComponent,
+            };
+          }),
+        };
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : "Segmentation failed" };
+      }
+    },
   };
 
   function doUndo() {
@@ -944,9 +1023,26 @@ export default function App() {
   async function onAgent(text: string) {
     const current = photoRef.current;
     if (!current) return;
-    setMessages((m) => [...m, { role: "user", text }]);
+    setMessages((m) => [
+      ...m,
+      { role: "user", text },
+      { role: "assistant", text: "", status: "streaming", steps: [] },
+    ]);
     setBusy(true);
     try {
+      const pixels = rendererRef.current?.sourceImageData();
+      const sceneSummary = pixels ? summarizeScene(analyzeScene(pixels)) : null;
+
+      let previewImage: Uint8Array | null = null;
+      if (settings.sendPreview) {
+        try {
+          const blob = await rendererRef.current?.visionThumbnail(settings.visionMaxEdge);
+          if (blob) previewImage = new Uint8Array(await blob.arrayBuffer());
+        } catch {
+          previewImage = null;
+        }
+      }
+
       const result = await runAgentTurn({
         instruction: text,
         recipe: current.recipe,
@@ -957,17 +1053,65 @@ export default function App() {
         presets: presets.map((p) => p.name),
         settings,
         actions: agentActions,
+        sceneSummary,
+        previewImage,
+        onTrace: (steps) => {
+          setMessages((msgs) => {
+            const next = msgs.slice();
+            const last = next[next.length - 1];
+            if (last?.role === "assistant" && last.status === "streaming") {
+              next[next.length - 1] = { ...last, steps };
+            }
+            return next;
+          });
+        },
       });
-      setMessages((m) => [...m, { role: "assistant", text: result.text, categories: result.categories }]);
+      setMessages((m) => {
+        const next = m.slice();
+        const last = next[next.length - 1];
+        if (last?.role === "assistant") {
+          next[next.length - 1] = {
+            role: "assistant",
+            text: result.text,
+            categories: result.categories,
+            steps: result.steps,
+            status: "done",
+            previewSent: result.previewSent,
+          };
+        } else {
+          next.push({
+            role: "assistant",
+            text: result.text,
+            categories: result.categories,
+            steps: result.steps,
+            status: "done",
+            previewSent: result.previewSent,
+          });
+        }
+        return next;
+      });
     } catch (err) {
-      setMessages((m) => [...m, { role: "error", text: err instanceof Error ? err.message : "Agent failed" }]);
+      setMessages((m) => {
+        const next = m.slice();
+        const last = next[next.length - 1];
+        const message = err instanceof Error ? err.message : "Agent failed";
+        if (last?.role === "assistant" && last.status === "streaming") {
+          next[next.length - 1] = { role: "error", text: message, status: "error", steps: last.steps };
+        } else {
+          next.push({ role: "error", text: message, status: "error" });
+        }
+        return next;
+      });
     } finally {
       setBusy(false);
     }
   }
 
-  function onSetting(field: "apiKey" | "baseURL" | "model", value: string) {
-    const next = { ...settings, [field]: value };
+  function onSetting(
+    field: "apiKey" | "baseURL" | "model" | "sendPreview" | "visionMaxEdge",
+    value: string | boolean | number,
+  ) {
+    const next = { ...settings, [field]: value } as AppSettings;
     setSettings(next);
     saveSettings(next);
   }
@@ -1276,6 +1420,8 @@ export default function App() {
             onAddBrushMask={addBrushMask}
             onAddLuminanceMask={addLuminanceMask}
             onAddColorMask={addColorMask}
+            onAddSubjectMask={() => void addSemanticMask("subject")}
+            onAddSkyMask={() => void addSemanticMask("sky")}
             onRemoveMask={removeSelectedMask}
             onLiveMask={liveMask}
             onBrushTool={(next) => setBrushTool((t) => ({ ...t, ...next }))}
@@ -1289,6 +1435,7 @@ export default function App() {
           messages={messages}
           busy={busy}
           hasKey={Boolean(settings.apiKey.trim())}
+          sendPreview={settings.sendPreview}
           onSend={onAgent}
           onOpenSettings={() => setSettingsOpen(true)}
         />
@@ -1309,6 +1456,8 @@ export default function App() {
           apiKey={settings.apiKey}
           baseURL={settings.baseURL}
           model={settings.model}
+          sendPreview={settings.sendPreview}
+          visionMaxEdge={settings.visionMaxEdge}
           onChange={onSetting}
           onClose={() => setSettingsOpen(false)}
         />
