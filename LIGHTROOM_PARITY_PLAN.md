@@ -43,7 +43,7 @@ Core develop globals, minimal library, and the agent.
 
 - [x] Docked chat panel with keyword-based tool routing
 - [x] Tools: `apply_develop_patch`, `apply_catalog_patch`, `apply_preset`, `copy_settings`, `reset_recipe`
-- [x] Privacy model: recipe, histogram, and EXIF only — no photo pixels uploaded
+- [x] Privacy-aware agent: local scene analysis + opt-in preview vision (default on)
 - [x] Eval suite (`evals/develop-v1.jsonl`)
 
 ### Stubs (typed or UI present, not functional)
@@ -250,7 +250,7 @@ Features where Field intentionally diverges from Lightroom:
 
 | Feature | Notes |
 |---|---|
-| **Privacy-first agent** | Edits recipe locally; no pixel upload. Lightroom AI features are cloud-dependent. |
+| **Privacy-aware agent** | Recipe edits stay local. Preview vision is opt-in (default on) and only sends a small JPEG; turn off in Settings. Semantic masks run on-device. |
 | **Reference-based import** | No vault lock-in; photos remain where they are on disk. |
 | **Unified recipe model** | One JSON recipe shared by sliders, WebGL preview, and agent tools. |
 | **Original branding** | Lightroom-inspired layout, not a clone. |
@@ -261,7 +261,7 @@ Features where Field intentionally diverges from Lightroom:
 
 ```
 v1    ✅  Globals, library basics, agent, JPEG export
-v1.5  ~   Masks (brush, color, luma, radial shipped; linear/semantic next)
+v1.5  ✅  Masks (brush, color, luma, radial, linear, semantic)
 v1.6  ✅  RAW decode + crop / transform
 v1.7  →   Color grading, lens profiles, full detail, point curve
 v2.0  ✓   Smart collections, stacks, map module shipped
