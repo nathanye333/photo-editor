@@ -132,14 +132,20 @@ export async function runAgentTurn(opts: {
   /** Developed preview JPEG bytes when sendPreview is enabled. */
   previewImage?: Uint8Array | null;
   onTrace?: (steps: AgentStep[]) => void;
+  /** Abort in-flight generation / tool loop (Stop button, photo switch, new chat). */
+  abortSignal?: AbortSignal;
 }): Promise<{
   text: string;
   categories: ReturnType<typeof routeCategories>;
   steps: AgentStep[];
   previewSent: boolean;
+  aborted: boolean;
 }> {
   if (!opts.settings.apiKey.trim()) {
     throw new Error("Add an API key in Settings to use the agent.");
+  }
+  if (opts.abortSignal?.aborted) {
+    return { text: "Stopped.", categories: [], steps: [], previewSent: false, aborted: true };
   }
   const { categories, system } = buildInstructions(opts);
   const openai = createOpenAI({
@@ -154,6 +160,7 @@ export async function runAgentTurn(opts: {
     tools: createAgentTools(opts.actions),
     stopWhen: stepCountIs(8),
     system,
+    abortSignal: opts.abortSignal,
     ...(previewSent
       ? {
           messages: [
@@ -174,13 +181,24 @@ export async function runAgentTurn(opts: {
     : [];
   opts.onTrace?.(steps);
 
-  for await (const part of result.fullStream) {
-    const event = traceEventFromStreamPart(part as Parameters<typeof traceEventFromStreamPart>[0]);
-    if (!event) continue;
-    steps = reduceTrace(steps, event);
-    opts.onTrace?.(steps);
+  try {
+    for await (const part of result.fullStream) {
+      if (opts.abortSignal?.aborted) break;
+      const event = traceEventFromStreamPart(part as Parameters<typeof traceEventFromStreamPart>[0]);
+      if (!event) continue;
+      steps = reduceTrace(steps, event);
+      opts.onTrace?.(steps);
+    }
+  } catch (err) {
+    const aborted =
+      opts.abortSignal?.aborted ||
+      (err instanceof Error && (err.name === "AbortError" || /abort/i.test(err.message)));
+    if (!aborted) throw err;
+    const text = finalTextFromSteps(steps, "Stopped.");
+    return { text, categories, steps, previewSent, aborted: true };
   }
 
-  const text = finalTextFromSteps(steps, "Done.");
-  return { text, categories, steps, previewSent };
+  const aborted = Boolean(opts.abortSignal?.aborted);
+  const text = finalTextFromSteps(steps, aborted ? "Stopped." : "Done.");
+  return { text, categories, steps, previewSent, aborted };
 }

@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import type { AgentChatSession as ChatSession } from "../agent/chatStore";
 import type { ToolCategory } from "../agent/router";
 import { summarizeTraceValue, toolCount, type AgentStep } from "../agent/trace";
 
@@ -67,27 +68,120 @@ function TraceTimeline({ steps, status }: { steps: AgentStep[]; status?: ChatMsg
   );
 }
 
+function formatChatTime(ts: number): string {
+  try {
+    return new Date(ts).toLocaleString(undefined, {
+      month: "short",
+      day: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+    });
+  } catch {
+    return "";
+  }
+}
+
 export function AgentChat(props: {
   messages: ChatMsg[];
   busy: boolean;
   hasKey: boolean;
   sendPreview: boolean;
+  photoLabel: string | null;
+  sessions: ChatSession[];
+  activeChatId: string | null;
+  canUndoAgent: boolean;
   onSend: (text: string) => void;
+  onStop: () => void;
+  onNewChat: () => void;
+  onSelectChat: (id: string) => void;
+  onUndoAgent: () => void;
   onOpenSettings: () => void;
 }) {
   const [text, setText] = useState("");
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const logRef = useRef<HTMLDivElement>(null);
+  const historyRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const el = logRef.current;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+  }, [props.messages, props.busy]);
+
+  useEffect(() => {
+    if (!historyOpen) return;
+    function onDoc(e: MouseEvent) {
+      if (!historyRef.current?.contains(e.target as Node)) setHistoryOpen(false);
+    }
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [historyOpen]);
+
+  const sessions = [...props.sessions].sort((a, b) => b.updatedAt - a.updatedAt);
+
   return (
     <aside className="agent">
       <header className="agent-h">
-        <span>Agent</span>
-        <button type="button" className="btn-ghost" onClick={props.onOpenSettings}>
-          Settings
-        </button>
+        <div className="agent-h-main">
+          <span>Agent</span>
+          {props.photoLabel ? <small className="agent-photo">{props.photoLabel}</small> : null}
+        </div>
+        <div className="agent-h-actions">
+          <div className="agent-history" ref={historyRef}>
+            <button
+              type="button"
+              className="btn-ghost"
+              disabled={!props.photoLabel}
+              aria-expanded={historyOpen}
+              onClick={() => setHistoryOpen((o) => !o)}
+              title="Chat history"
+            >
+              History
+            </button>
+            {historyOpen ? (
+              <div className="agent-history-menu" role="menu">
+                {sessions.length === 0 ? (
+                  <p className="stub pad">No chats yet</p>
+                ) : (
+                  sessions.map((s) => (
+                    <button
+                      key={s.id}
+                      type="button"
+                      role="menuitem"
+                      className={s.id === props.activeChatId ? "on" : ""}
+                      onClick={() => {
+                        props.onSelectChat(s.id);
+                        setHistoryOpen(false);
+                      }}
+                    >
+                      <span className="agent-history-title">{s.title || "New chat"}</span>
+                      <small>{formatChatTime(s.updatedAt)}</small>
+                    </button>
+                  ))
+                )}
+              </div>
+            ) : null}
+          </div>
+          <button
+            type="button"
+            className="btn-ghost"
+            disabled={!props.photoLabel || props.busy}
+            onClick={props.onNewChat}
+            title="Start a new chat for this photo"
+          >
+            New
+          </button>
+          <button type="button" className="btn-ghost" onClick={props.onOpenSettings}>
+            Settings
+          </button>
+        </div>
       </header>
-      <div className="agent-log">
-        {props.messages.length === 0 ? (
+      <div className="agent-log" ref={logRef}>
+        {!props.photoLabel ? (
+          <p className="stub">Select a photo to chat with the develop agent.</p>
+        ) : props.messages.length === 0 ? (
           <p className="stub">
-            Edits the same recipe as the sliders. Try “warm this up” or “lift the shadows”.
+            Edits the same recipe as the sliders for this photo. Try “warm this up” or “lift the shadows”.
           </p>
         ) : null}
         {props.messages.map((m, i) => (
@@ -109,12 +203,28 @@ export function AgentChat(props: {
       ) : props.sendPreview ? (
         <p className="stub pad">Preview vision on — a small JPEG of the current develop preview is sent with each turn.</p>
       ) : null}
+      <div className="agent-toolbar">
+        <button
+          type="button"
+          className="btn-ghost"
+          disabled={!props.canUndoAgent || props.busy}
+          onClick={props.onUndoAgent}
+          title="Undo recipe changes from the last agent turn"
+        >
+          Undo agent
+        </button>
+        {props.busy ? (
+          <button type="button" className="btn-stop" onClick={props.onStop} title="Stop the agent">
+            Stop
+          </button>
+        ) : null}
+      </div>
       <form
         className="agent-in"
         onSubmit={(e) => {
           e.preventDefault();
           const t = text.trim();
-          if (!t || props.busy) return;
+          if (!t || props.busy || !props.photoLabel) return;
           setText("");
           props.onSend(t);
         }}
@@ -122,8 +232,8 @@ export function AgentChat(props: {
         <textarea
           rows={2}
           value={text}
-          placeholder="Describe an edit…"
-          disabled={props.busy}
+          placeholder={props.photoLabel ? "Describe an edit…" : "Select a photo first…"}
+          disabled={props.busy || !props.photoLabel}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === "Enter" && !e.shiftKey) {
@@ -132,7 +242,7 @@ export function AgentChat(props: {
             }
           }}
         />
-        <button type="submit" className="btn" disabled={props.busy || !text.trim()}>
+        <button type="submit" className="btn" disabled={props.busy || !text.trim() || !props.photoLabel}>
           {props.busy ? "…" : "Send"}
         </button>
       </form>
@@ -196,7 +306,7 @@ export function SettingsModal(props: {
             onChange={(e) => props.onChange("visionMaxEdge", Number(e.target.value) || 768)}
           />
         </label>
-        <p className="stub">Settings are stored locally.</p>
+        <p className="stub">Settings are stored locally. Chat history is stored per photo in this browser.</p>
         <button type="button" className="btn" onClick={props.onClose}>
           Done
         </button>

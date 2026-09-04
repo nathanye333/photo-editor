@@ -1,6 +1,19 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { runAgentTurn } from "./agent/run";
 import type { AgentActions } from "./agent/tools";
+import {
+  clearLastTurnMarker,
+  ensurePhotoChats,
+  getActiveSession,
+  loadChatStore,
+  saveChatStore,
+  selectChat,
+  startNewChat,
+  updateActiveMessages,
+  type AgentChatStore,
+} from "./agent/chatStore";
+import { analyzeScene, summarizeScene } from "./agent/scene";
+import { segmentImage, type SemanticLabel } from "./ml/segment";
 import { photosFromFileList, photosFromScanned, loadRawPreview } from "./catalog/import";
 import { photoThumbSrc } from "./catalog/media";
 import { emptyPhoto, loadPhotos, loadPresets, openCatalog, savePresetRow, upsertPhoto, loadSnapshots, saveSnapshotRow, deleteSnapshotRow, loadCollections, saveCollectionRow, loadCollectionPhotoIds, addPhotoToCollection, removePhotoFromCollection, createVirtualCopy } from "./catalog/store";
@@ -19,8 +32,6 @@ import { bitmapFromBlob, PreviewRenderer, thumbnailFromBitmap, type HistogramSta
 import { createSampleBitmap } from "./render/sampleImage";
 import { loadSettings, saveSettings, type AppSettings } from "./settings";
 import { AgentChat, SettingsModal, type ChatMsg } from "./ui/agentChat";
-import { analyzeScene, summarizeScene } from "./agent/scene";
-import { segmentImage, type SemanticLabel } from "./ml/segment";
 import { HistogramView, Stars } from "./ui/controls";
 import { CropOverlay } from "./ui/crop";
 import { DevelopPanels } from "./ui/develop";
@@ -87,9 +98,20 @@ export default function App() {
   const [brushCursor, setBrushCursor] = useState<{ x: number; y: number; d: number } | null>(null);
   const [hist, setHist] = useState<HistogramStats | null>(null);
   const [agentOpen, setAgentOpen] = useState(true);
-  const [messages, setMessages] = useState<ChatMsg[]>([]);
+  const [chatStore, setChatStore] = useState<AgentChatStore>(() => loadChatStore());
   const [busy, setBusy] = useState(false);
+  const abortRef = useRef<AbortController | null>(null);
+  const chatPhotoRef = useRef<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+
+  function patchChatStore(updater: (store: AgentChatStore) => AgentChatStore) {
+    setChatStore((prev) => {
+      const next = updater(prev);
+      saveChatStore(next);
+      return next;
+    });
+  }
+
   const [settings, setSettings] = useState<AppSettings>(defaultSettingsSafe);
   const [status, setStatus] = useState("");
   const [libraryView, setLibraryView] = useState<LibraryView>("grid");
@@ -110,6 +132,13 @@ export default function App() {
   const photo = photos.find((p) => p.id === selectedId) ?? null;
   photoRef.current = photo;
   selectedIdRef.current = selectedId;
+
+  const activeChat = getActiveSession(chatStore, selectedId);
+  const chatMessages = activeChat?.messages ?? [];
+  const chatSessions = selectedId ? (chatStore.byPhoto[selectedId]?.sessions ?? []) : [];
+  const canUndoAgent =
+    Boolean(activeChat?.lastTurnPastLength != null && photo?.history.past.length) &&
+    (activeChat?.lastTurnPastLength ?? 0) < (photo?.history.past.length ?? 0);
 
   const visible = useMemo(() => {
     let list = photos;
@@ -1020,14 +1049,89 @@ export default function App() {
     commitRecipe(cloneRecipe(clipboard));
   }
 
+
+  // Keep agent chats scoped to the selected photo; abort in-flight work on switch.
+  useEffect(() => {
+    const prev = chatPhotoRef.current;
+    if (prev === selectedId) return;
+    if (prev && abortRef.current) {
+      abortRef.current.abort();
+      abortRef.current = null;
+      setBusy(false);
+      patchChatStore((store) =>
+        updateActiveMessages(store, prev, (msgs) => {
+          const next = msgs.slice();
+          const last = next[next.length - 1];
+          if (last?.role === "assistant" && last.status === "streaming") {
+            next[next.length - 1] = {
+              ...last,
+              role: "error",
+              text: last.text || "Stopped.",
+              status: "error",
+            };
+          }
+          return next;
+        }),
+      );
+    }
+    chatPhotoRef.current = selectedId;
+    if (selectedId) {
+      patchChatStore((store) => ensurePhotoChats(store, selectedId));
+    }
+  }, [selectedId]);
+
+  function stopAgent() {
+    abortRef.current?.abort();
+  }
+
+  function onNewChat() {
+    if (!selectedId) return;
+    if (busy) stopAgent();
+    patchChatStore((store) => startNewChat(store, selectedId));
+  }
+
+  function onSelectChat(chatId: string) {
+    if (!selectedId) return;
+    if (busy) stopAgent();
+    patchChatStore((store) => selectChat(store, selectedId, chatId));
+  }
+
+  function undoAgentTurn() {
+    const current = photoRef.current;
+    const session = getActiveSession(chatStore, current?.id ?? null);
+    if (!current || session?.lastTurnPastLength == null) return;
+    const target = session.lastTurnPastLength;
+    let history = current.history;
+    let guard = 0;
+    while (history.past.length > target && guard++ < 64) {
+      history = undo(history);
+    }
+    replacePhoto({ ...current, recipe: history.present, history });
+    patchChatStore((store) => clearLastTurnMarker(store, current.id));
+    setStatus("Undid last agent turn");
+  }
+
   async function onAgent(text: string) {
     const current = photoRef.current;
     if (!current) return;
-    setMessages((m) => [
-      ...m,
-      { role: "user", text },
-      { role: "assistant", text: "", status: "streaming", steps: [] },
-    ]);
+    const photoId = current.id;
+    const pastLength = current.history.past.length;
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+
+    patchChatStore((store) =>
+      updateActiveMessages(
+        store,
+        photoId,
+        (m) => [
+          ...m,
+          { role: "user", text },
+          { role: "assistant", text: "", status: "streaming", steps: [] },
+        ],
+        { lastTurnPastLength: pastLength },
+      ),
+    );
     setBusy(true);
     try {
       const pixels = rendererRef.current?.sourceImageData();
@@ -1045,64 +1149,79 @@ export default function App() {
 
       const result = await runAgentTurn({
         instruction: text,
-        recipe: current.recipe,
+        recipe: photoRef.current?.recipe ?? current.recipe,
         histogram: rendererRef.current?.histogram() ?? hist,
-        exif: current.exif,
-        rating: current.rating,
-        flag: current.flag,
+        exif: (photoRef.current ?? current).exif,
+        rating: (photoRef.current ?? current).rating,
+        flag: (photoRef.current ?? current).flag,
         presets: presets.map((p) => p.name),
         settings,
         actions: agentActions,
         sceneSummary,
         previewImage,
+        abortSignal: controller.signal,
         onTrace: (steps) => {
-          setMessages((msgs) => {
-            const next = msgs.slice();
-            const last = next[next.length - 1];
-            if (last?.role === "assistant" && last.status === "streaming") {
-              next[next.length - 1] = { ...last, steps };
-            }
-            return next;
-          });
+          patchChatStore((store) =>
+            updateActiveMessages(store, photoId, (msgs) => {
+              const next = msgs.slice();
+              const last = next[next.length - 1];
+              if (last?.role === "assistant" && last.status === "streaming") {
+                next[next.length - 1] = { ...last, steps };
+              }
+              return next;
+            }),
+          );
         },
       });
-      setMessages((m) => {
-        const next = m.slice();
-        const last = next[next.length - 1];
-        if (last?.role === "assistant") {
-          next[next.length - 1] = {
-            role: "assistant",
-            text: result.text,
+
+      patchChatStore((store) =>
+        updateActiveMessages(store, photoId, (msgs) => {
+          const next = msgs.slice();
+          const last = next[next.length - 1];
+          const assistant: ChatMsg = {
+            role: result.aborted ? "error" : "assistant",
+            text: result.aborted ? result.text || "Stopped." : result.text,
             categories: result.categories,
             steps: result.steps,
-            status: "done",
+            status: result.aborted ? "error" : "done",
             previewSent: result.previewSent,
           };
-        } else {
-          next.push({
-            role: "assistant",
-            text: result.text,
-            categories: result.categories,
-            steps: result.steps,
-            status: "done",
-            previewSent: result.previewSent,
-          });
-        }
-        return next;
-      });
+          if (last?.role === "assistant" && last.status === "streaming") {
+            next[next.length - 1] = assistant;
+          } else {
+            next.push(assistant);
+          }
+          return next;
+        }),
+      );
     } catch (err) {
-      setMessages((m) => {
-        const next = m.slice();
-        const last = next[next.length - 1];
-        const message = err instanceof Error ? err.message : "Agent failed";
-        if (last?.role === "assistant" && last.status === "streaming") {
-          next[next.length - 1] = { role: "error", text: message, status: "error", steps: last.steps };
-        } else {
-          next.push({ role: "error", text: message, status: "error" });
-        }
-        return next;
-      });
+      const aborted =
+        controller.signal.aborted ||
+        (err instanceof Error && (err.name === "AbortError" || /abort/i.test(err.message)));
+      const message = aborted
+        ? "Stopped."
+        : err instanceof Error
+          ? err.message
+          : "Agent failed";
+      patchChatStore((store) =>
+        updateActiveMessages(store, photoId, (msgs) => {
+          const next = msgs.slice();
+          const last = next[next.length - 1];
+          if (last?.role === "assistant" && last.status === "streaming") {
+            next[next.length - 1] = {
+              role: "error",
+              text: message,
+              status: "error",
+              steps: last.steps,
+            };
+          } else {
+            next.push({ role: "error", text: message, status: "error" });
+          }
+          return next;
+        }),
+      );
     } finally {
+      if (abortRef.current === controller) abortRef.current = null;
       setBusy(false);
     }
   }
@@ -1432,11 +1551,19 @@ export default function App() {
 
       {agentOpen ? (
         <AgentChat
-          messages={messages}
+          messages={chatMessages}
           busy={busy}
           hasKey={Boolean(settings.apiKey.trim())}
           sendPreview={settings.sendPreview}
+          photoLabel={photo ? fileName(photo.path) : null}
+          sessions={chatSessions}
+          activeChatId={activeChat?.id ?? null}
+          canUndoAgent={canUndoAgent}
           onSend={onAgent}
+          onStop={stopAgent}
+          onNewChat={onNewChat}
+          onSelectChat={onSelectChat}
+          onUndoAgent={undoAgentTurn}
           onOpenSettings={() => setSettingsOpen(true)}
         />
       ) : null}
