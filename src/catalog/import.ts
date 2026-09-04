@@ -5,7 +5,6 @@ import { matchLensProfile } from "../render/lensProfiles";
 import { decodeRaw, fileExists, fileUrl, isTauri, writeThumb, type ScannedFile } from "../native";
 import { parseExif, type ExifData } from "./exif";
 import { assignBurstStacks } from "./stacks";
-import { storeImageBlob } from "./browserBlobs";
 import { emptyPhoto, upsertPhoto } from "./store";
 import { fileName, folderOf, photoId, type Photo } from "./types";
 
@@ -69,9 +68,6 @@ async function blobToDataUrl(blob: Blob): Promise<string> {
 }
 
 async function ingestBitmap(photo: Photo, blob: Blob): Promise<Photo> {
-  if (!isTauri()) {
-    await storeImageBlob(photo.id, blob);
-  }
   const bmp = await bitmapFromBlob(blob);
   photo.width = bmp.width;
   photo.height = bmp.height;
@@ -80,6 +76,7 @@ async function ingestBitmap(photo: Photo, blob: Blob): Promise<Photo> {
     if (isTauri()) {
       photo.thumbPath = await writeThumb(photo.id, new Uint8Array(await thumb.arrayBuffer()));
     } else {
+      // Session URLs only — cloud upsert uploads original + thumb to Supabase Storage.
       photo.thumbDataUrl = await blobToDataUrl(thumb);
       photo.blobUrl = URL.createObjectURL(blob);
     }

@@ -1,17 +1,20 @@
 # Field
 
-Local photo develop lab. Lightroom-inspired layout, original branding. Photos stay on disk; edits are a non-destructive JSON recipe shared by sliders and the agent.
+Local photo develop lab. Lightroom-inspired layout, original branding. Photos stay on disk (desktop); browser mode stores catalog + blobs in Supabase per OAuth account. Edits are a non-destructive JSON recipe shared by sliders and the agent.
 
 ## Run
 
 ```bash
 npm install
+cp .env.example .env.local   # set VITE_SUPABASE_URL + anon/publishable key for browser mode
 npm test
-npm run dev          # web UI (sample image, browser file import)
+npm run dev          # web UI — sign in with Google/GitHub, import photos
 npm run tauri dev    # desktop: folder import, SQLite catalog, export
 ```
 
-Needs a Rust toolchain for the Tauri shell. The Vite app works alone for Develop globals on the built-in sample.
+See [supabase/README.md](supabase/README.md) for schema, RLS, storage, and OAuth setup.
+
+Needs a Rust toolchain for the Tauri shell. The Vite app requires Supabase for persistent browser catalogs (sample image still works after sign-in when the catalog is empty).
 
 ## v1
 

@@ -242,7 +242,7 @@ Lower priority unless targeting power users. Some items may stay out of scope by
 - [ ] Face detection / people grouping
 - [ ] Auto keyword suggestions
 
-**Out of scope (by design):** Cloud sync across devices — Field is local-first; photos and recipes stay on disk.
+**Out of scope (by design):** Full Lightroom cloud sync of on-disk originals across desktop machines. Browser mode now persists catalog + image blobs to Supabase per OAuth account; desktop remains SQLite + files on disk.
 
 ---
 

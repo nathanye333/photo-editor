@@ -63,6 +63,15 @@ export type HistogramStats = {
 
 export type ViewMode = "fit" | "1:1";
 
+/** Fit-mode canvas size: fill the host, preserve aspect, allow upscale. */
+export function fitCanvasSize(hostW: number, hostH: number, cropW: number, cropH: number) {
+  const scale = Math.min(hostW / cropW, hostH / cropH);
+  return {
+    w: Math.max(1, Math.round(cropW * scale)),
+    h: Math.max(1, Math.round(cropH * scale)),
+  };
+}
+
 export type SourceSample = {
   r: number;
   g: number;
@@ -181,6 +190,8 @@ export class PreviewRenderer {
   private resultB: Fbo | null = null;
   private localFbo: Fbo | null = null;
   private weightFbo: Fbo | null = null;
+  /** Last host layout request — reapplied when a new image finishes decoding. */
+  private lastLayout: { view: ViewMode; hostW: number; hostH: number; editingCrop: boolean } | null = null;
 
   constructor(canvas: HTMLCanvasElement) {
     const gl = canvas.getContext("webgl2", { premultipliedAlpha: false, preserveDrawingBuffer: true });
@@ -277,7 +288,13 @@ export class PreviewRenderer {
       ctx.drawImage(image, 0, 0);
       this.sourcePixels = ctx.getImageData(0, 0, c.width, c.height);
     }
-    this.schedule();
+    // Re-fit after decode: layout often ran while image was still null.
+    if (this.lastLayout) {
+      const { view, hostW, hostH, editingCrop } = this.lastLayout;
+      this.layout(view, hostW, hostH, editingCrop);
+    } else {
+      this.schedule();
+    }
   }
 
   setRecipe(recipe: EditRecipe) {
@@ -319,10 +336,11 @@ export class PreviewRenderer {
   }
 
   layout(view: ViewMode, hostW: number, hostH: number, editingCrop = false) {
+    this.lastLayout = { view, hostW, hostH, editingCrop };
     const img = this.image;
     if (!img) {
-      this.canvas.width = hostW;
-      this.canvas.height = hostH;
+      this.canvas.width = Math.max(1, hostW);
+      this.canvas.height = Math.max(1, hostH);
       return;
     }
     const crop = this.recipe.crop;
@@ -336,9 +354,9 @@ export class PreviewRenderer {
       this.canvas.width = cropW;
       this.canvas.height = cropH;
     } else {
-      const scale = Math.min(hostW / cropW, hostH / cropH, 1);
-      this.canvas.width = Math.max(1, Math.round(cropW * scale));
-      this.canvas.height = Math.max(1, Math.round(cropH * scale));
+      const size = fitCanvasSize(hostW, hostH, cropW, cropH);
+      this.canvas.width = size.w;
+      this.canvas.height = size.h;
     }
     this.schedule();
   }

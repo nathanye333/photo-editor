@@ -3,11 +3,13 @@ import { runAgentTurn } from "./agent/run";
 import type { AgentActions } from "./agent/tools";
 import { photosFromFileList, photosFromScanned, loadRawPreview } from "./catalog/import";
 import { photoThumbSrc } from "./catalog/media";
-import { emptyPhoto, loadPhotos, loadPresets, openCatalog, savePresetRow, upsertPhoto, loadSnapshots, saveSnapshotRow, deleteSnapshotRow, loadCollections, saveCollectionRow, loadCollectionPhotoIds, addPhotoToCollection, removePhotoFromCollection, createVirtualCopy } from "./catalog/store";
+import { emptyPhoto, loadPhotos, loadPresets, openCatalog, openCloudCatalog, savePresetRow, upsertPhoto, loadSnapshots, saveSnapshotRow, deleteSnapshotRow, loadCollections, saveCollectionRow, loadCollectionPhotoIds, addPhotoToCollection, removePhotoFromCollection, createVirtualCopy } from "./catalog/store";
 import { DEFAULT_LIBRARY_FILTERS, filterPhotos, photoMatchesFilters, sortPhotos, type LibraryFilters, type LibrarySort } from "./catalog/filter";
 import { collapseStacks } from "./catalog/stacks";
 import { fileName, photoLabel, type Collection, type Photo, type Preset, type RecipeSnapshot } from "./catalog/types";
 import { fileExists, fileUrl, isTauri, pickFolder, pickSaveJpeg, scanFolder, writeFileBytes } from "./native";
+import { useAuth } from "./auth/AuthContext";
+import { AccountChip, SignInScreen } from "./ui/auth";
 import { applyAspectPreset, cropZoom, defaultCrop, normalizeCrop } from "./recipe/crop";
 import { cloneRecipe, createBrushMask, createColorRangeMask, createLinearMask, createLuminanceMask, createRadialMask, createSemanticMask, defaultRecipe } from "./recipe/defaults";
 import { autoTone } from "./recipe/auto";
@@ -44,6 +46,8 @@ function samplePhoto(): Photo {
 }
 
 export default function App() {
+  const auth = useAuth();
+  const desktop = isTauri();
   const [mod, setMod] = useState<Module>("develop");
   const [photos, setPhotos] = useState<Photo[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -57,6 +61,9 @@ export default function App() {
   const [view, setView] = useState<ViewMode>("fit");
   const [before, setBefore] = useState(false);
   const [solo, setSolo] = useState<string | null>(null);
+  const [catalogReady, setCatalogReady] = useState(false);
+  const [authError, setAuthError] = useState<string | null>(null);
+  const [authBusy, setAuthBusy] = useState(false);
   const [open, setOpen] = useState<Record<string, boolean>>({
     basic: true,
     curve: true,
@@ -137,15 +144,48 @@ export default function App() {
   useEffect(() => {
     let cancelled = false;
     (async () => {
+      if (!desktop) {
+        if (auth.loading) return;
+        if (!auth.user) {
+          setCatalogReady(false);
+          setPhotos([]);
+          setSelectedId(null);
+          return;
+        }
+        try {
+          const { migrated } = await openCloudCatalog();
+          if (cancelled) return;
+          const rows = await loadPhotos();
+          if (cancelled) return;
+          const list = rows.length ? rows : [samplePhoto()];
+          setPhotos(list);
+          setSelectedId(list[0].id);
+          setPresets(await loadPresets());
+          const cols = await loadCollections();
+          setCollections(cols);
+          const members: Record<string, string[]> = {};
+          for (const c of cols) {
+            members[c.id] = await loadCollectionPhotoIds(c.id);
+          }
+          setCollectionMembers(members);
+          setCatalogReady(true);
+          if (migrated > 0) {
+            setStatus(`Migrated ${migrated} photo${migrated === 1 ? "" : "s"} from browser storage`);
+          }
+        } catch (err) {
+          if (!cancelled) {
+            setAuthError(err instanceof Error ? err.message : "Failed to load cloud catalog");
+            setCatalogReady(false);
+          }
+        }
+        return;
+      }
+
       await openCatalog();
       const rows = await loadPhotos();
-      const marked = isTauri()
-        ? await Promise.all(
-            rows.map(async (p) =>
-              p.kind === "sample" ? p : { ...p, missing: !(await fileExists(p.path)) },
-            ),
-          )
-        : rows;
+      const marked = await Promise.all(
+        rows.map(async (p) => (p.kind === "sample" ? p : { ...p, missing: !(await fileExists(p.path)) })),
+      );
       if (cancelled) return;
       const list = marked.length ? marked : [samplePhoto()];
       setPhotos(list);
@@ -158,11 +198,12 @@ export default function App() {
         members[c.id] = await loadCollectionPhotoIds(c.id);
       }
       setCollectionMembers(members);
+      setCatalogReady(true);
     })();
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [desktop, auth.loading, auth.user?.id]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -236,18 +277,52 @@ export default function App() {
               setPhotos((ps) => ps.map((p) => (p.id === photo.id ? { ...p, blobUrl: url } : p)));
             }
           }
+          const canvas = canvasRef.current;
+          const host = hostRef.current;
+          if (host) {
+            const next = { w: host.clientWidth, h: host.clientHeight };
+            setHostSize((prev) => (prev.w === next.w && prev.h === next.h ? prev : next));
+          }
+          if (canvas) {
+            const size = { w: canvas.width, h: canvas.height };
+            setPreviewSize((prev) => (prev.w === size.w && prev.h === size.h ? prev : size));
+          }
           return;
         }
         if (photo.blobUrl) {
           const blob = await fetch(photo.blobUrl).then((r) => r.blob());
           const bmp = await bitmapFromBlob(blob);
-          if (!cancelled) renderer.setImage(bmp);
+          if (!cancelled) {
+            renderer.setImage(bmp);
+            const canvas = canvasRef.current;
+            const host = hostRef.current;
+            if (host) {
+              const next = { w: host.clientWidth, h: host.clientHeight };
+              setHostSize((prev) => (prev.w === next.w && prev.h === next.h ? prev : next));
+            }
+            if (canvas) {
+              const size = { w: canvas.width, h: canvas.height };
+              setPreviewSize((prev) => (prev.w === size.w && prev.h === size.h ? prev : size));
+            }
+          }
           return;
         }
         if (photo.thumbDataUrl) {
           const blob = await fetch(photo.thumbDataUrl).then((r) => r.blob());
           const bmp = await bitmapFromBlob(blob);
-          if (!cancelled) renderer.setImage(bmp);
+          if (!cancelled) {
+            renderer.setImage(bmp);
+            const canvas = canvasRef.current;
+            const host = hostRef.current;
+            if (host) {
+              const next = { w: host.clientWidth, h: host.clientHeight };
+              setHostSize((prev) => (prev.w === next.w && prev.h === next.h ? prev : next));
+            }
+            if (canvas) {
+              const size = { w: canvas.width, h: canvas.height };
+              setPreviewSize((prev) => (prev.w === size.w && prev.h === size.h ? prev : size));
+            }
+          }
           return;
         }
         if (photo.kind === "raw" && isTauri()) {
@@ -257,12 +332,34 @@ export default function App() {
             return;
           }
           renderer.setImage(raw.bitmap);
+          const canvas = canvasRef.current;
+          const host = hostRef.current;
+          if (host) {
+            const next = { w: host.clientWidth, h: host.clientHeight };
+            setHostSize((prev) => (prev.w === next.w && prev.h === next.h ? prev : next));
+          }
+          if (canvas) {
+            const size = { w: canvas.width, h: canvas.height };
+            setPreviewSize((prev) => (prev.w === size.w && prev.h === size.h ? prev : size));
+          }
           return;
         }
         if (isTauri()) {
           const blob = await fetch(fileUrl(photo.path)).then((r) => r.blob());
           const bmp = await bitmapFromBlob(blob);
-          if (!cancelled) renderer.setImage(bmp);
+          if (!cancelled) {
+            renderer.setImage(bmp);
+            const canvas = canvasRef.current;
+            const host = hostRef.current;
+            if (host) {
+              const next = { w: host.clientWidth, h: host.clientHeight };
+              setHostSize((prev) => (prev.w === next.w && prev.h === next.h ? prev : next));
+            }
+            if (canvas) {
+              const size = { w: canvas.width, h: canvas.height };
+              setPreviewSize((prev) => (prev.w === size.w && prev.h === size.h ? prev : size));
+            }
+          }
         }
       } catch {
         if (!cancelled) renderer.setImage(null);
@@ -1131,6 +1228,38 @@ export default function App() {
       : null;
   const navSrc = photo ? photoThumbSrc(photo) : undefined;
 
+  if (!desktop) {
+    if (auth.loading) {
+      return <div className="auth-screen"><p className="auth-lede">Loading session…</p></div>;
+    }
+    if (!auth.user) {
+      return (
+        <SignInScreen
+          configured={auth.configured}
+          busy={authBusy}
+          error={authError}
+          onSignIn={async (provider) => {
+            setAuthBusy(true);
+            setAuthError(null);
+            try {
+              await auth.signInWithOAuth(provider);
+            } catch (err) {
+              setAuthError(err instanceof Error ? err.message : "Sign-in failed");
+              setAuthBusy(false);
+            }
+          }}
+        />
+      );
+    }
+    if (!catalogReady) {
+      return (
+        <div className="auth-screen">
+          <p className="auth-lede">{authError ?? "Loading your catalog…"}</p>
+        </div>
+      );
+    }
+  }
+
   return (
     <div className={`shell${agentOpen ? " with-agent" : ""}`}>
       <header className="modbar">
@@ -1145,6 +1274,14 @@ export default function App() {
           Develop
         </button>
         <span className="grow" />
+        {!desktop && auth.user ? (
+          <AccountChip
+            email={auth.user.email}
+            onSignOut={() => {
+              void auth.signOut();
+            }}
+          />
+        ) : null}
         <button type="button" onClick={onImportFolder}>
           Import
         </button>

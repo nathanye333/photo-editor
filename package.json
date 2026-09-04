@@ -13,6 +13,7 @@
   "dependencies": {
     "@ai-sdk/openai": "^4.0.50",
     "@huggingface/transformers": "^4.2.0",
+    "@supabase/supabase-js": "^2.115.0",
     "@tauri-apps/api": "^2",
     "@tauri-apps/plugin-dialog": "^2.7.2",
     "@tauri-apps/plugin-opener": "^2",

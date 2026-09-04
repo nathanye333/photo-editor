@@ -3,8 +3,6 @@ import { initHistory, type RecipeHistory } from "../recipe/history";
 import { cloneRecipe, defaultRecipe } from "../recipe/defaults";
 import { parseCatalogFields, parseRecipe, defaultCatalogFields } from "../recipe/patch";
 import { isTauri } from "../native";
-import { loadImageBlob } from "./browserBlobs";
-import { loadBrowserCatalog, scheduleBrowserCatalogSave } from "./browserPersist";
 import {
   folderOf,
   type Collection,
@@ -15,6 +13,21 @@ import {
 } from "./types";
 import type { LibraryFilters } from "./filter";
 import { DEFAULT_LIBRARY_FILTERS } from "./filter";
+import {
+  migrateBrowserCatalogToSupabase,
+  supabaseAddPhotoToCollection,
+  supabaseDeleteSnapshot,
+  supabaseLoadCollectionPhotoIds,
+  supabaseLoadCollections,
+  supabaseLoadPhotos,
+  supabaseLoadPresets,
+  supabaseLoadSnapshots,
+  supabaseRemovePhotoFromCollection,
+  supabaseSaveCollection,
+  supabaseSavePreset,
+  supabaseSaveSnapshot,
+  supabaseUpsertPhoto,
+} from "./supabaseBackend";
 
 type PhotoRow = {
   id: string;
@@ -46,49 +59,13 @@ type PhotoRow = {
 };
 
 let db: Database | null = null;
+/** Browser + OAuth: catalog lives in Supabase (not localStorage/IndexedDB). */
+let cloud = false;
 let memoryPhotos: Photo[] = [];
 let memoryPresets: Preset[] = [];
 let memorySnapshots: RecipeSnapshot[] = [];
 let memoryCollections: Collection[] = [];
 let memoryCollectionPhotos: Array<{ collectionId: string; photoId: string }> = [];
-
-function browserSnapshot() {
-  return {
-    photos: memoryPhotos,
-    presets: memoryPresets,
-    snapshots: memorySnapshots,
-    collections: memoryCollections,
-    collectionPhotos: memoryCollectionPhotos,
-  };
-}
-
-function persistBrowserIfNeeded(): void {
-  if (db || isTauri()) return;
-  scheduleBrowserCatalogSave(browserSnapshot);
-}
-
-function loadBrowserIntoMemory(): void {
-  const data = loadBrowserCatalog();
-  if (!data) return;
-  memoryPhotos = data.photos;
-  memoryPresets = data.presets;
-  memorySnapshots = data.snapshots;
-  memoryCollections = data.collections;
-  memoryCollectionPhotos = data.collectionPhotos;
-}
-
-async function hydrateBrowserPhotoUrls(photos: Photo[]): Promise<Photo[]> {
-  const out: Photo[] = [];
-  for (const photo of photos) {
-    if (photo.blobUrl || photo.kind === "sample") {
-      out.push(photo);
-      continue;
-    }
-    const blob = await loadImageBlob(photo.id);
-    out.push(blob ? { ...photo, blobUrl: URL.createObjectURL(blob) } : photo);
-  }
-  return out;
-}
 
 function hydrate(row: PhotoRow): Photo {
   const catalog = parseCatalogFields(
@@ -191,11 +168,13 @@ async function migrateV4(database: Database): Promise<void> {
   }
 }
 
+/** Desktop SQLite catalog, or no-op in the browser (cloud catalog opens after OAuth). */
 export async function openCatalog(): Promise<void> {
   if (!isTauri()) {
-    loadBrowserIntoMemory();
+    cloud = false;
     return;
   }
+  cloud = false;
   db = await Database.load("sqlite:field.db");
   await db.execute(`
     CREATE TABLE IF NOT EXISTS photos (
@@ -265,21 +244,39 @@ export async function openCatalog(): Promise<void> {
   `);
 }
 
+/** Browser: enable Supabase-backed catalog for the signed-in OAuth user. */
+export async function openCloudCatalog(): Promise<{ migrated: number }> {
+  cloud = true;
+  db = null;
+  memoryPhotos = [];
+  memoryPresets = [];
+  memorySnapshots = [];
+  memoryCollections = [];
+  memoryCollectionPhotos = [];
+  const migrated = await migrateBrowserCatalogToSupabase();
+  return { migrated };
+}
+
+export function isCloudCatalog(): boolean {
+  return cloud;
+}
+
 export async function loadPhotos(): Promise<Photo[]> {
-  if (!db) {
-    memoryPhotos = await hydrateBrowserPhotoUrls(memoryPhotos);
-    return memoryPhotos;
-  }
+  if (cloud) return supabaseLoadPhotos();
+  if (!db) return memoryPhotos;
   const rows = await db.select<PhotoRow[]>("SELECT * FROM photos ORDER BY path, copy_name");
   return rows.map(hydrate);
 }
 
 export async function upsertPhoto(photo: Photo): Promise<void> {
+  if (cloud) {
+    await supabaseUpsertPhoto(photo);
+    return;
+  }
   if (!db) {
     const i = memoryPhotos.findIndex((p) => p.id === photo.id);
     if (i >= 0) memoryPhotos[i] = photo;
     else memoryPhotos.push(photo);
-    persistBrowserIfNeeded();
     return;
   }
   await db.execute(
@@ -326,6 +323,7 @@ export async function upsertPhoto(photo: Photo): Promise<void> {
 }
 
 export async function loadPresets(): Promise<Preset[]> {
+  if (cloud) return supabaseLoadPresets();
   if (!db) return memoryPresets;
   const rows = await db.select<{ id: string; name: string; recipe: string }[]>(
     "SELECT * FROM presets ORDER BY name",
@@ -334,9 +332,12 @@ export async function loadPresets(): Promise<Preset[]> {
 }
 
 export async function savePresetRow(preset: Preset): Promise<void> {
+  if (cloud) {
+    await supabaseSavePreset(preset);
+    return;
+  }
   if (!db) {
     memoryPresets = [...memoryPresets.filter((p) => p.id !== preset.id), preset];
-    persistBrowserIfNeeded();
     return;
   }
   await db.execute(
@@ -347,6 +348,7 @@ export async function savePresetRow(preset: Preset): Promise<void> {
 }
 
 export async function loadSnapshots(photoId: string): Promise<RecipeSnapshot[]> {
+  if (cloud) return supabaseLoadSnapshots(photoId);
   if (!db) {
     return memorySnapshots
       .filter((s) => s.photoId === photoId)
@@ -365,9 +367,12 @@ export async function loadSnapshots(photoId: string): Promise<RecipeSnapshot[]> 
 }
 
 export async function saveSnapshotRow(snapshot: RecipeSnapshot): Promise<void> {
+  if (cloud) {
+    await supabaseSaveSnapshot(snapshot);
+    return;
+  }
   if (!db) {
     memorySnapshots = [...memorySnapshots.filter((s) => s.id !== snapshot.id), snapshot];
-    persistBrowserIfNeeded();
     return;
   }
   await db.execute(
@@ -384,9 +389,12 @@ export async function saveSnapshotRow(snapshot: RecipeSnapshot): Promise<void> {
 }
 
 export async function deleteSnapshotRow(id: string): Promise<void> {
+  if (cloud) {
+    await supabaseDeleteSnapshot(id);
+    return;
+  }
   if (!db) {
     memorySnapshots = memorySnapshots.filter((s) => s.id !== id);
-    persistBrowserIfNeeded();
     return;
   }
   await db.execute(`DELETE FROM recipe_snapshots WHERE id = $1`, [id]);
@@ -403,6 +411,7 @@ function parseCollectionRules(raw: string | null): LibraryFilters | undefined {
 }
 
 export async function loadCollections(): Promise<Collection[]> {
+  if (cloud) return supabaseLoadCollections();
   if (!db) return memoryCollections;
   const rows = await db.select<{ id: string; name: string; kind: string | null; rules: string | null }[]>(
     "SELECT * FROM collections ORDER BY name",
@@ -416,9 +425,12 @@ export async function loadCollections(): Promise<Collection[]> {
 }
 
 export async function saveCollectionRow(collection: Collection): Promise<void> {
+  if (cloud) {
+    await supabaseSaveCollection(collection);
+    return;
+  }
   if (!db) {
     memoryCollections = [...memoryCollections.filter((c) => c.id !== collection.id), collection];
-    persistBrowserIfNeeded();
     return;
   }
   await db.execute(
@@ -434,10 +446,14 @@ export async function saveCollectionRow(collection: Collection): Promise<void> {
 }
 
 export async function deleteCollectionRow(id: string): Promise<void> {
+  if (cloud) {
+    memoryCollections = memoryCollections.filter((c) => c.id !== id);
+    memoryCollectionPhotos = memoryCollectionPhotos.filter((r) => r.collectionId !== id);
+    return;
+  }
   if (!db) {
     memoryCollections = memoryCollections.filter((c) => c.id !== id);
     memoryCollectionPhotos = memoryCollectionPhotos.filter((r) => r.collectionId !== id);
-    persistBrowserIfNeeded();
     return;
   }
   await db.execute(`DELETE FROM collection_photos WHERE collection_id = $1`, [id]);
@@ -445,6 +461,7 @@ export async function deleteCollectionRow(id: string): Promise<void> {
 }
 
 export async function loadCollectionPhotoIds(collectionId: string): Promise<string[]> {
+  if (cloud) return supabaseLoadCollectionPhotoIds(collectionId);
   if (!db) {
     return memoryCollectionPhotos
       .filter((r) => r.collectionId === collectionId)
@@ -458,10 +475,13 @@ export async function loadCollectionPhotoIds(collectionId: string): Promise<stri
 }
 
 export async function addPhotoToCollection(collectionId: string, photoId: string): Promise<void> {
+  if (cloud) {
+    await supabaseAddPhotoToCollection(collectionId, photoId);
+    return;
+  }
   if (!db) {
     if (!memoryCollectionPhotos.some((r) => r.collectionId === collectionId && r.photoId === photoId)) {
       memoryCollectionPhotos.push({ collectionId, photoId });
-      persistBrowserIfNeeded();
     }
     return;
   }
@@ -478,11 +498,14 @@ export async function addPhotoToCollection(collectionId: string, photoId: string
 }
 
 export async function removePhotoFromCollection(collectionId: string, photoId: string): Promise<void> {
+  if (cloud) {
+    await supabaseRemovePhotoFromCollection(collectionId, photoId);
+    return;
+  }
   if (!db) {
     memoryCollectionPhotos = memoryCollectionPhotos.filter(
       (r) => !(r.collectionId === collectionId && r.photoId === photoId),
     );
-    persistBrowserIfNeeded();
     return;
   }
   await db.execute(`DELETE FROM collection_photos WHERE collection_id = $1 AND photo_id = $2`, [
