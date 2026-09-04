@@ -121,6 +121,8 @@ button:disabled {
   display: flex;
   flex-direction: column;
   min-height: 0;
+  overflow: hidden;
+  position: relative;
 }
 
 h3 {
@@ -785,26 +787,36 @@ h3 {
   justify-content: flex-end;
 }
 
-.agent-history {
-  position: relative;
+.agent-history-panel {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-panel);
+  border-top: 0;
 }
 
-.agent-history-menu {
-  position: absolute;
-  right: 0;
-  top: calc(100% + 4px);
-  z-index: 5;
-  width: min(260px, 70vw);
-  max-height: 240px;
+.agent-history-panel-h {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.agent-history-list {
+  flex: 1;
+  min-height: 0;
   overflow: auto;
-  background: var(--bg-panel);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
   padding: 4px;
 }
 
-.agent-history-menu button {
+.agent-history-list button {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
@@ -814,12 +826,13 @@ h3 {
   background: transparent;
   border: none;
   border-radius: 3px;
-  padding: 6px 8px;
+  padding: 8px;
   cursor: pointer;
+  color: inherit;
 }
 
-.agent-history-menu button:hover,
-.agent-history-menu button.on {
+.agent-history-list button:hover,
+.agent-history-list button.on {
   background: var(--bg-raised, rgba(255, 255, 255, 0.06));
 }
 
@@ -828,10 +841,16 @@ h3 {
   text-overflow: ellipsis;
   white-space: nowrap;
   max-width: 100%;
+  font-size: 13px;
 }
 
-.agent-history-menu small {
+.agent-history-list small {
   color: var(--muted);
+  font-size: 11px;
+}
+
+.btn-ghost.on {
+  background: var(--bg-raised, rgba(255, 255, 255, 0.06));
 }
 
 .agent-toolbar {
