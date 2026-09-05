@@ -239,6 +239,19 @@ export default function App() {
     };
   }, [photo?.id]);
 
+  const syncPreviewSizes = useCallback(() => {
+    const host = hostRef.current;
+    const canvas = canvasRef.current;
+    if (host) {
+      const next = { w: host.clientWidth, h: host.clientHeight };
+      setHostSize((prev) => (prev.w === next.w && prev.h === next.h ? prev : next));
+    }
+    if (canvas) {
+      const size = { w: canvas.width, h: canvas.height };
+      setPreviewSize((prev) => (prev.w === size.w && prev.h === size.h ? prev : size));
+    }
+  }, []);
+
   useEffect(() => {
     const renderer = rendererRef.current;
     if (!renderer) return;
@@ -265,18 +278,25 @@ export default function App() {
               setPhotos((ps) => ps.map((p) => (p.id === photo.id ? { ...p, blobUrl: url } : p)));
             }
           }
+          syncPreviewSizes();
           return;
         }
         if (photo.blobUrl) {
           const blob = await fetch(photo.blobUrl).then((r) => r.blob());
           const bmp = await bitmapFromBlob(blob);
-          if (!cancelled) renderer.setImage(bmp);
+          if (!cancelled) {
+            renderer.setImage(bmp);
+            syncPreviewSizes();
+          }
           return;
         }
         if (photo.thumbDataUrl) {
           const blob = await fetch(photo.thumbDataUrl).then((r) => r.blob());
           const bmp = await bitmapFromBlob(blob);
-          if (!cancelled) renderer.setImage(bmp);
+          if (!cancelled) {
+            renderer.setImage(bmp);
+            syncPreviewSizes();
+          }
           return;
         }
         if (photo.kind === "raw" && isTauri()) {
@@ -286,12 +306,16 @@ export default function App() {
             return;
           }
           renderer.setImage(raw.bitmap);
+          syncPreviewSizes();
           return;
         }
         if (isTauri()) {
           const blob = await fetch(fileUrl(photo.path)).then((r) => r.blob());
           const bmp = await bitmapFromBlob(blob);
-          if (!cancelled) renderer.setImage(bmp);
+          if (!cancelled) {
+            renderer.setImage(bmp);
+            syncPreviewSizes();
+          }
         }
       } catch {
         if (!cancelled) renderer.setImage(null);
@@ -300,7 +324,7 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [photo?.id, photo?.path, photo?.kind, photo?.missing]);
+  }, [photo?.id, photo?.path, photo?.kind, photo?.missing, syncPreviewSizes]);
 
   const layoutPreview = useCallback(() => {
     const host = hostRef.current;
